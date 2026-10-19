@@ -139,3 +139,10 @@ how they cross levels.
 | `src/creature.c` | Creatures on the party's level |
 | `src/save.c` | Saving and loading: the party, then every level image from far memory |
 | `src/hw.c` | Video bank, RAM under the ROMs, data files, sound |
+
+## Licence
+
+The source code here is under the MIT licence: see [LICENSE](LICENSE). That covers this code
+only. *Dungeon Master* and everything the build extracts from it (the dungeon, texts, names and
+rules tables in `gen/` and `bin/`) remain FTL's, and aren't included or licensed here. The
+FarMem library is part of Tedide and is used under its own terms.
