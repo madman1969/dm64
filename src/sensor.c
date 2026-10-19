@@ -150,6 +150,12 @@ static void apply_effect (unsigned char x, unsigned char y, unsigned char cell, 
     redraw |= REDRAW_VIEW;
 }
 
+/* For spells: an effect sent straight to a square, as a sensor would. */
+void effect_at (unsigned char x, unsigned char y, unsigned char cell, unsigned char effect)
+{
+    apply_effect (x, y, cell, effect);
+}
+
 static void trigger (unsigned int* r, unsigned char pressed)
 {
     unsigned char effect = SENS_EFFECT (r);

@@ -26,34 +26,16 @@ static void say (const char* s)
     cbm_k_bsout (RETURN);
 }
 
+/* The help text is in tools/text.py, kept in the RAM under the KERNAL. */
 static void help (void)
 {
-    static const char* const lines[] = {
-        "W/UP     FORWARD",
-        "S/DOWN   BACK",
-        "A D      STEP LEFT/RIGHT",
-        "Q/LEFT   TURN LEFT",
-        "E/RIGHT  TURN RIGHT",
-        "SPACE    PRESS/USE WALL,",
-        "         DOOR OR MIRROR",
-        "T        TAKE AN OBJECT",
-        "G        PUT HAND DOWN",
-        "1-4      CHAMPION ATTACKS",
-        "I        INVENTORY",
-        "X        EAT/DRINK/READ",
-        "H        THIS HELP",
-        "F1 / F3  SAVE / LOAD GAME",
-        "",
-        "FIND YOUR CHAMPIONS IN",
-        "THE HALL'S MIRRORS.",
-    };
     unsigned char i;
 
     sprites_off ();
     ui_clear (0, 0, VIEW_W, VIEW_H);
     ui_print (2, 1, COLOR_WHITE, "DUNGEON MASTER 64");
-    for (i = 0; i < sizeof lines / sizeof lines[0]; ++i) {
-        ui_print (0, 3 + i, COLOR_GRAY3, lines[i]);
+    for (i = 0; i < NHELP; ++i) {
+        ui_print (0, 3 + i, COLOR_GRAY3, hi_str (help_line_at[i]));
     }
     wait_key ();
     redraw = REDRAW_VIEW | REDRAW_PANEL;
@@ -73,6 +55,7 @@ static void key (unsigned char k)
     case 'g':           drop_object (); break;
     case 'i':           inventory (); break;
     case 'x':           use_held (0); break;
+    case 'c':           cast_spell (); break;
     case 'h':           help (); break;
     case 133:           save_game (); break;        /* F1 */
     case 134:           load_game (); break;        /* F3 */
@@ -124,6 +107,7 @@ int main (void)
             events_tick ();
             creatures_tick ();
             party_tick ();
+            magic_tick ();
             sound_tick ();
         }
         if (redraw & REDRAW_VIEW) {

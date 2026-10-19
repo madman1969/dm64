@@ -43,6 +43,16 @@ void hi_read (void* dst, unsigned src, unsigned len)
     __asm__ ("cli");
 }
 
+/* One of our own strings from the RAM under the KERNAL (creature names, help), until the next. */
+const char* hi_str (unsigned int addr)
+{
+    static char buf[41];
+
+    hi_read (buf, addr, 40);
+    buf[40] = 0;
+    return buf;
+}
+
 /* The data files, read from the drive the game was loaded from, skipping their load address. */
 unsigned char hw_open (const char* name)
 {

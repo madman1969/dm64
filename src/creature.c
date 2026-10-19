@@ -69,7 +69,7 @@ void hit_creature (signed char a, int dmg)
         r[3] -= dmg;
         return;
     }
-    msg (creature_names[CTYPE (r)]);
+    msg (hi_str (creature_name_at[CTYPE (r)]));
     msg ("IS SLAIN!");
     for (i = 0; i < 3; ++i) {
         r[3 + i] = r[4 + i];
@@ -154,7 +154,7 @@ void creatures_tick (void)
             damage_champion (who, dmg);
             continue;
         }
-        if (adx > 7 || ady > 7 || ci->move_ticks == 255) {
+        if (adx > 7 || ady > 7 || ci->move_ticks == 255 || invisible_ticks) {
             continue;
         }
         if (--active[a].timer) {

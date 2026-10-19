@@ -52,11 +52,22 @@ champions. Each comes with their real statistics and possessions from the origin
 | 1-4 | That champion attacks with the weapon in their action hand |
 | I | Inventory: A-O swap your hand with a slot, 1-4 pick a champion, E eat/drink/read |
 | X | Eat, drink or read what's in your hand |
+| C | Cast a spell (see below) |
 | H | Help |
 | F1, F3 | Save, load (slot 1 or 2). When the party dies, F3 loads a game |
 
 The game runs in real time, as the original does. Creatures move and attack whether you press
 keys or not.
+
+### Magic
+
+Press C, choose who casts, then pick runes with 1-6, one row at a time: a power rune (LO, UM, ON,
+EE, PAL, MON), then up to three more from the element, form and class rows. Each rune costs
+mana as you pick it; DEL takes the last one back. RETURN casts and SPACE gives up. The game
+waits while you choose, unlike the original. The spells are DM's own. The dungeon's scrolls and
+walls teach some of them: VI into an empty flask heals, FUL IR is a fireball, and ZO opens doors.
+A spell needs a skill level of its own level plus the power. A caster short of it may fail,
+though less often the wiser they are.
 
 ## What's in it
 
@@ -68,7 +79,10 @@ keys or not.
   DM's 5-bit packed format.
 - Object names, and the rules tables from `GRAPHICS.DAT`: weapon damage and weight, armour
   defence, which slots each object fits, and each creature type's speed, attack, defence,
-  poison and dexterity. These are FTL's own LZW-packed tables, unpacked by `tools/dmgfx.py`.
+  poison and dexterity, and which creatures are non-material. These are FTL's own LZW-packed
+  tables, unpacked by `tools/dmgfx.py`.
+- The spell table: all 25 spells' runes, required skill levels, skills, kinds and strengths,
+  and the runes' mana costs.
 
 ### The engine
 
@@ -86,15 +100,23 @@ keys or not.
 - Recruiting champions from the mirrors, with an inventory of 15 slots each. Objects travel
   with the party from level to level.
 - Melee combat using the weapon tables. Creature groups chase and attack at their own speeds,
-  and drop what they carry when they die.
+  and drop what they carry when they die. Weapons pass through non-material creatures (ghosts,
+  black flames, materializers, water elementals): only magic, or a Vorpal Blade, hurts them.
+- Magic: casting with mana costs and skill checks, and spells as projectiles that fly through
+  the view (fireball, lightning, poison bolt and cloud, harm non-material, and ZO, which opens
+  doors; fireballs blast open doors that can be burnt), potions cast into empty flasks (all
+  nine), party and fire shields, invisibility (creatures stop chasing), and ZOKATHRA.
 - Food, health/stamina/mana recovery, potions (VI, MON, EE, ROS, KU, DANE, NETA, water), and
   scrolls.
 
 ### Not yet
 
-- Magic: casting runes, spells, and projectiles (fireballs, lightning, poison clouds), including
-  the dungeon's projectile launchers and creature generators.
-- Darkness and torches, water, experience and levelling up, poison.
+- Darkness and torches (so the light and darkness spells only say so), magic vision, magic
+  footprints, water, experience and levelling up, and poison. Spells can't yet be learnt
+  better through practice.
+- The dungeon's projectile launchers and creature generators, and creatures casting spells.
+- DM's exact formulas for spell damage, shield strength and how long spells last. The ones
+  here are simpler stand-ins, scaled by the spell's strength from the table and the power rune.
 - Throwing and shooting, bashing doors, creatures using doors and pits, and teleporting objects
   and creatures.
 - DM's own graphics (wall and floor decorations, champion portraits, creature pictures) and
@@ -105,14 +127,15 @@ keys or not.
 
 ```text
 $0400-$07FF  buffers (the default screen's RAM)           LOWBSS segment, c64-dm64.cfg
-$0801-$BDFF  the program, rules tables, the party's level (3K buffer), the party's objects
-$BE00-$CBFF  free (about 3.5K)
-$CC00-$CFFF  C stack
+$0801-$CBFF  the program, rules tables, the party's level (3K buffer), the party's objects
+             (about 300 bytes are left)
+$CD00-$CFFF  C stack (768 bytes)
 $D000-$DFFF  dungeon texts             } in the RAM under the I/O area and KERNAL,
 $E000-$E3FF  screen                    } loaded from DMHI. The video chip uses bank 3
-$E800-$EFFF  character set             } and always sees RAM there. The CPU reads the
-$F000-$F7FF  creature sprites          } texts and names with the ROMs switched out
-$F800-$FFF9  object names              } (hw.c: hi_read).
+$E400-$E7FF  creature names, help      } and always sees RAM there. The CPU reads the
+$E800-$EFFF  character set             } texts and names with the ROMs switched out
+$F000-$F7FF  creature sprites          } (hw.c: hi_read, hi_str).
+$F800-$FFF9  object names              }
 far memory   the 14 level images, about 32K (DMLEV)
 ```
 
@@ -122,6 +145,10 @@ and objects. Things are numbered within the level, so the image can be copied in
 far memory whole. Objects the party picks up move into a separate pool (`dungeon.c`), which is
 how they cross levels.
 
+The C64's own RAM is now nearly full. The next features will need room made first: moving more
+of the program's text under the KERNAL, or trimming code. cc65's code is large, about 32K for
+this program.
+
 ## Source
 
 | File | |
@@ -129,6 +156,7 @@ how they cross levels.
 | `tools/dmdat.py` | Reads the STX (Pasti) disk image, its FAT12 file system, and `DUNGEON.DAT` |
 | `tools/dmgfx.py` | Unpacks `GRAPHICS.DAT`: object names and the rules tables |
 | `tools/art.py` | The custom characters and creature sprites (hand-drawn, not DM's) |
+| `tools/text.py` | The game's own help text |
 | `tools/dmconv.py` | Writes `gen/dmdata.c`, `gen/glyphs.h`, `bin/dmlev.bin`, `bin/dmhi.bin` |
 | `src/main.c` | Start-up, main loop, keys |
 | `src/dungeon.c` | Levels in far memory, squares, object lists, objects, texts |
@@ -137,6 +165,7 @@ how they cross levels.
 | `src/party.c` | Champions, recruiting, combat, eating and drinking |
 | `src/sensor.c` | Sensors, doors, pits, stairs, teleporters, moving and clicking |
 | `src/creature.c` | Creatures on the party's level |
+| `src/magic.c` | Casting spells, projectiles, potions and the other spells |
 | `src/save.c` | Saving and loading: the party, then every level image from far memory |
 | `src/hw.c` | Video bank, RAM under the ROMs, data files, sound |
 

@@ -352,6 +352,10 @@ static void square (signed char k, signed char l)
                  creature_info[th_creature[TH_INDEX (active[a].thing)][2] >> 8].colour);
         }
     }
+    a = projectile_at (sx, sy);
+    if (a >= 0) {
+        put (x0, CY - 1, G_BALL, projectile_colour (a));
+    }
 }
 
 void sprites_off (void)

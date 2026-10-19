@@ -76,6 +76,7 @@ unsigned char hw_close_check (void);
 void hw_close (void);
 void hw_init (void);
 void hi_read (void* dst, unsigned src, unsigned len);
+const char* hi_str (unsigned int addr);
 void sound (unsigned char pitch, unsigned char wave, unsigned char len);
 void sound_tick (void);
 #define SND_CLICK()  sound (40, 0x81, 2)
@@ -102,6 +103,7 @@ unsigned long level_far_addr (unsigned char l);
 unsigned int to_party (unsigned int t);     /* a level's object -> the party's */
 unsigned int to_level (unsigned int t);     /* and back, NONE if the level is full */
 void pool_free (unsigned int t);
+unsigned int pool_new (unsigned char type, unsigned int attributes);   /* NONE if full */
 extern unsigned char lev, lw, lh;   /* the party's level and its size */
 extern unsigned char px, py, pdir;  /* the party's square and direction (0 N, 1 E, 2 S, 3 W) */
 extern const signed char dir_dx[4], dir_dy[4];
@@ -179,6 +181,7 @@ void party_left (unsigned char x, unsigned char y);
 void floor_object (unsigned char x, unsigned char y, unsigned int t, unsigned char added);
 void click_wall (void);
 void click_door (void);
+void effect_at (unsigned char x, unsigned char y, unsigned char cell, unsigned char effect);
 void move_party (signed char fwd, signed char side);
 void turn_party (signed char by);
 void take_object (void);
@@ -193,6 +196,18 @@ void creatures_scan (void);
 void creatures_tick (void);
 signed char creature_at (unsigned char x, unsigned char y);   /* active[] index or -1 */
 void hit_creature (signed char a, int dmg);
+
+/* ---- magic.c ---- */
+#define MAXPROJ 4
+typedef struct { unsigned char lev, x, y, dir, type, power, strength, range; } proj_t;
+extern proj_t proj[MAXPROJ];
+extern unsigned char nproj;
+extern unsigned int shield_ticks, invisible_ticks;
+extern unsigned char shield;
+void cast_spell (void);
+void magic_tick (void);
+signed char projectile_at (unsigned char x, unsigned char y);   /* proj[] index or -1 */
+unsigned char projectile_colour (unsigned char p);
 
 /* ---- save.c ---- */
 void save_game (void);

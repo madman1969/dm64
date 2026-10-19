@@ -241,7 +241,7 @@ void damage_champion (unsigned char who, int amount)
     if (c->hp <= 0) {
         return;
     }
-    amount -= armour_total (who) >> 4;
+    amount -= (armour_total (who) >> 4) + shield;
     if (amount < 1) {
         amount = 1;
     }
@@ -284,6 +284,10 @@ void attack (unsigned char who)
         return;
     }
     ci = &creature_info[th_creature[TH_INDEX (active[a].thing)][2] >> 8];
+    if ((ci->flags & CR_NON_MATERIAL) && !(w != NONE && TH_TYPE (w) == T_WEAPON && wi == 16)) {
+        msg ("THE BLOW PASSES RIGHT THROUGH IT!");      /* only magic, or a Vorpal Blade */
+        return;
+    }
     chance = 50 + (c->stat[2] >> 1) + c->skill[0] * 4;
     chance = chance > (ci->dex >> 1) + 5 ? chance - (ci->dex >> 1) : 5;
     if ((rand () % 100) >= chance) {

@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import art      # noqa: E402
 import dmdat    # noqa: E402
 import dmgfx    # noqa: E402
+import text     # noqa: E402
 
 SPARE_FIRSTS = 48           # room for objects dropped on squares that had none
 SPARE_OBJECTS = 48          # room for objects dropped on the level
@@ -44,6 +45,7 @@ HI_TEXT = 0xD000
 HI_GLYPHS = 0xE800 + art.FIRST_GLYPH * 8
 HI_SPRITES = 0xF000
 HI_NAMES = 0xF800
+HI_STRINGS = 0xE400         # 1K, free: the screen ends at $E3FF
 
 # Food value of each junk type (by junk subtype); anything not listed isn't food.
 FOOD = {29: 30, 30: 30, 31: 40, 32: 45, 33: 50, 34: 50, 35: 60, 36: 110}
@@ -190,6 +192,7 @@ def main():
     h.append('#define NNAMES %d' % len(names))
     h.append('#define HI_TEXT 0x%04X\n#define HI_NAMES 0x%04X' % (HI_TEXT, HI_NAMES))
     h.append('#define HI_SPRITES 0x%04X' % HI_SPRITES)
+    h.append('#define NHELP %d' % len(text.HELP))
     h.append('''
 typedef struct {
     unsigned char w, h;         /* size */
@@ -209,10 +212,26 @@ extern const unsigned char weapon_info[46][3];  /* weight, damage, kinetic energ
 extern const unsigned char armour_info[58][2];  /* weight, defence */
 extern const unsigned char food_value[64];      /* by junk type */
 typedef struct {
-    unsigned char move_ticks, attack_ticks, defense, attack, poison, dex, shape, colour;
+    unsigned char move_ticks, attack_ticks, defense, attack, poison, dex, shape, colour, flags;
 } creature_info_t;
 extern const creature_info_t creature_info[27];
-extern const char* const creature_names[27];
+extern const unsigned int creature_name_at[27];    /* in the RAM under the KERNAL: hi_str */
+extern const unsigned int help_line_at[NHELP];
+#define CR_NON_MATERIAL 0x40    /* only magic hurts it */
+
+/* Spells: the runes after the power rune (row * 6 + column, 255 for none), the skill level and
+** skill they need (2 or 12-15 priest, 3 or 16-19 wizard), what they are (SPELL_ below), which
+** potion, projectile or effect, and how strong. */
+typedef struct {
+    unsigned char rune[3], level, skill, kind, type, strength;
+} spell_t;
+#define NSPELLS 25
+#define SPELL_POTION     1
+#define SPELL_PROJECTILE 2
+#define SPELL_OTHER      3
+extern const spell_t spells[NSPELLS];
+extern const unsigned char mana_cost[4][6];     /* each rune's base cost, by row */
+extern const unsigned char mana_multiplier[6];  /* in eighths, by power */
 
 #define OBJ_MOUTH  0x01
 #define OBJ_HEAD   0x02
@@ -255,12 +274,27 @@ extern const char* const creature_names[27];
     c.append('const creature_info_t creature_info[27] = {')
     for i, cr in enumerate(T['creatures']):
         nm, shape, col = art.CREATURES[i]
-        c.append('    { %d, %d, %d, %d, %d, %d, %d, %d },  /* %s */' % (
+        c.append('    { %d, %d, %d, %d, %d, %d, %d, %d, %d },  /* %s */' % (
             cr['move'], cr['attack_ticks'], cr['defense'], cr['attack'], cr['poison'], cr['dex'],
-            art.SHAPE_ORDER.index(shape), col, nm))
+            art.SHAPE_ORDER.index(shape), col, cr['attributes'] & 0x40, nm))
     c.append('};\n')
-    c.append('const char* const creature_names[27] = {\n%s\n};' % '\n'.join(
-        '    "%s",' % cr[0] for cr in art.CREATURES))
+    c.append('const spell_t spells[NSPELLS] = {')
+    for sp in T['spells']:
+        c.append('    { { %d, %d, %d }, %d, %d, %d, %d, %d },' % tuple(
+            sp['runes'] + [sp['level'], sp['skill'], sp['kind'], sp['type'], sp['strength']]))
+    c.append('};\n')
+    c.append('const unsigned char mana_cost[4][6] = {\n%s\n};\n' % '\n'.join(
+        '    { %s },' % ', '.join(map(str, row)) for row in T['mana_cost']))
+    c.append(carray('mana_multiplier', 'unsigned char', T['mana_multiplier']))
+
+    # Words of our own, in the RAM under the KERNAL: zero-terminated, at the addresses listed.
+    strings, at = bytearray(), []
+    for s in [cr[0] for cr in art.CREATURES] + text.HELP:
+        at.append(HI_STRINGS + len(strings))
+        strings += s.encode('ascii') + b'\0'
+    assert len(strings) <= 0x400, "too many strings for $E400-$E7FF"
+    c.append(carray('creature_name_at', 'unsigned int', at[:27], 9))
+    c.append(carray('help_line_at', 'unsigned int', at[27:], 9))
 
     with open(os.path.join(gendir, 'dmdata.h'), 'w') as f:
         f.write('\n'.join(h) + '\n')
@@ -275,19 +309,20 @@ extern const char* const creature_names[27];
         f.write(struct.pack('<H', 0) + b''.join(images))
 
     # DMHI: chunks of (address, length, bytes), ended by address 0.
-    text = b''.join(struct.pack('<H', w) for w in D.text)
-    assert HI_TEXT + len(text) <= 0xE000
+    textdata = b"".join(struct.pack("<H", w) for w in D.text)
+    assert HI_TEXT + len(textdata) <= 0xE000
     sprites = art.sprite_bytes()
     assert len(sprites) <= HI_NAMES - HI_SPRITES
     hi = bytearray()
-    for addr, data in ((HI_TEXT, text), (HI_GLYPHS, art.glyph_bytes()),
-                       (HI_SPRITES, sprites), (HI_NAMES, bytes(blob))):
+    for addr, data in ((HI_TEXT, textdata), (HI_GLYPHS, art.glyph_bytes()),
+                       (HI_SPRITES, sprites), (HI_NAMES, bytes(blob)),
+                       (HI_STRINGS, bytes(strings))):
         hi += struct.pack('<HH', addr, len(data)) + data
     hi += b'\0\0'
     with open(os.path.join(bindir, 'dmhi.bin'), 'wb') as f:
         f.write(struct.pack('<H', 0) + hi)          # a dummy load address
     print('dmconv: %d levels, %d bytes in all (largest %d), %d bytes of text, DMHI %d bytes' % (
-        len(D.maps), sum(len(i) for i in images), level_max, len(text), len(hi)))
+        len(D.maps), sum(len(i) for i in images), level_max, len(textdata), len(hi)))
 
 
 if __name__ == '__main__':

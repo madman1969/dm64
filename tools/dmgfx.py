@@ -104,4 +104,25 @@ class Graphics:
         assert t['objinfo'][136][0] == 176, 'object info table not where expected'
         assert t['weapons'][8][2] == 10 and t['armour'][0] == (3, 5), 'weapon/armour tables moved'
         assert all(c['aspect'] == i for i, c in enumerate(cr)), 'creature table not where expected'
+
+        # Item 560: the 25 spells, then the runes' mana costs. A spell is its runes after the
+        # power rune (as 0x60 + rune number, rune number = row * 6 + column, 0 if unused), the
+        # skill level it needs, the skill it uses, and attributes: bits 0-3 its kind (1 potion,
+        # 2 projectile, 3 other), bits 4-9 which potion, projectile or effect, bits 10-15 its
+        # strength.
+        g = self.item(560)
+        SPELLS, MULTIPLIERS, BASE_COSTS = 1026, 1226, 1232
+        spells = []
+        for i in range(25):
+            r = g[SPELLS + i * 8:SPELLS + i * 8 + 8]
+            attr = struct.unpack_from('>H', r, 6)[0]
+            spells.append(dict(runes=[b - 0x60 if b else 255 for b in r[1:4]], level=r[4],
+                               skill=r[5], kind=attr & 15, type=(attr >> 4) & 63,
+                               strength=attr >> 10))
+        t['spells'] = spells
+        t['mana_multiplier'] = list(g[MULTIPLIERS:MULTIPLIERS + 6])
+        t['mana_cost'] = [list(g[BASE_COSTS + r * 6:BASE_COSTS + r * 6 + 6]) for r in range(4)]
+        # The first spell is YA IR (party shield), and LO costs 1 mana.
+        assert spells[0]['runes'] == [6, 15, 255] and t['mana_cost'][0][0] == 1, 'spells moved'
+        assert t['mana_multiplier'] == [8, 12, 16, 20, 24, 28], 'mana costs moved'
         return t

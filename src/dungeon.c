@@ -281,6 +281,21 @@ unsigned int to_level (unsigned int t)
     return move_object (t, th_obj, IMG->count[5], 0);
 }
 
+/* A new object for the party, conjured by a spell. */
+unsigned int pool_new (unsigned char type, unsigned int attributes)
+{
+    unsigned char i;
+
+    for (i = 0; i < POOL_SIZE; ++i) {
+        if (pool[i][0] == NONE) {
+            pool[i][0] = END;
+            pool[i][1] = attributes;
+            return TH_MAKE (type, POOL_BASE + i, 0);
+        }
+    }
+    return NONE;
+}
+
 void pool_free (unsigned int t)
 {
     unsigned int* r = thing_ptr (t), inside;

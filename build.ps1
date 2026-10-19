@@ -21,7 +21,7 @@ if ($LASTEXITCODE) { throw "dmconv failed" }
 
 $sources = @(
     "src\main.c", "src\dungeon.c", "src\hw.c", "src\view.c", "src\ui.c", "src\party.c",
-    "src\sensor.c", "src\creature.c", "src\save.c", "gen\dmdata.c",
+    "src\sensor.c", "src\creature.c", "src\save.c", "src\magic.c", "gen\dmdata.c",
     "$FarMem\src\farmem.c", "$FarMem\src\faralloc.c", "$FarMem\src\farhw.s"
 )
 & "$Cc65\cl65.exe" -t c64 -O -Cl -C c64-dm64.cfg -I include -I gen -I "$FarMem\include" `

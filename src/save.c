@@ -1,9 +1,10 @@
 /*
 ** save.c - saving and loading the game, in two slots on the game disk (DMSAVE1, DMSAVE2).
 **
-** A save is the party's state, then every level image straight from far memory: the levels hold
-** everything else that changes - doors, pits, sensors, texts shown, creatures and where every
-** object lies. About 33K, or 133 blocks.
+** A save is a header, the champions, the party's objects and the waiting events, then every
+** level image straight from far memory: the levels hold everything else that changes - doors,
+** pits, sensors, texts shown, creatures and where every object lies. About 33K, or 133 blocks.
+** Each part is read and written straight from where it lives, so saving needs no copy of it.
 */
 
 #include <string.h>
@@ -11,7 +12,7 @@
 #include "dm.h"
 #include "farmem.h"
 
-#define SAVE_VERSION 1
+#define SAVE_VERSION 2
 
 typedef struct {
     char magic[4];
@@ -19,16 +20,19 @@ typedef struct {
     unsigned long levels_total;         /* these levels must be the ones this game was built with */
     unsigned char lev, px, py, pdir, nchamps, nevents;
     unsigned int held, game_time;
-    champion_t champ[4];
-    unsigned int pool[POOL_SIZE][2];
-    event_t events[MAXEVENTS];
-} save_t;
+} header_t;
 
-static save_t s;
-static unsigned char buf[256];
+static header_t h;
 static char name[] = "dmsave1";
-
 static const char magic[4] = { 'D', 'M', '6', '4' };
+
+/* The parts after the header. */
+static void* const part_ptr[3] = { champ, pool, events };
+static const unsigned int part_size[3] = { sizeof champ, sizeof pool, sizeof events };
+
+/* Disk transfers go through the view's colour buffer: the view is drawn again afterwards. */
+#define BUF      view_cols
+#define BUF_SIZE 256
 
 /* Asks for a slot; 0 if the player backs out. */
 static unsigned char pick_slot (const char* what)
@@ -53,17 +57,17 @@ static unsigned char copy_level (unsigned char l, unsigned char saving)
     unsigned int left = level_size[l], n;
 
     for (; left; left -= n, p += n) {
-        n = left > sizeof buf ? sizeof buf : left;
+        n = left > BUF_SIZE ? BUF_SIZE : left;
         if (saving) {
-            far_read (buf, p, n);
-            if (hw_write (buf, n) != n) {
+            far_read (BUF, p, n);
+            if (hw_write (BUF, n) != n) {
                 return 0;
             }
         } else {
-            if (hw_read (buf, n) != n) {
+            if (hw_read (BUF, n) != n) {
                 return 0;
             }
-            far_write (p, buf, n);
+            far_write (p, BUF, n);
         }
     }
     return 1;
@@ -71,73 +75,84 @@ static unsigned char copy_level (unsigned char l, unsigned char saving)
 
 void save_game (void)
 {
-    unsigned char l, ok;
+    unsigned char i, ok;
 
     if (!pick_slot ("SAVE THE GAME")) {
         return;
     }
     msg ("SAVING...");
     level_flush ();
-    memcpy (s.magic, magic, sizeof magic);
-    s.version = SAVE_VERSION;
-    s.levels_total = LEVELS_TOTAL;
-    s.lev = lev;
-    s.px = px;
-    s.py = py;
-    s.pdir = pdir;
-    s.nchamps = nchamps;
-    s.nevents = nevents;
-    s.held = held;
-    s.game_time = game_time;
-    memcpy (s.champ, champ, sizeof champ);
-    memcpy (s.pool, pool, sizeof pool);
-    memcpy (s.events, events, sizeof events);
+    memcpy (h.magic, magic, sizeof magic);
+    h.version = SAVE_VERSION;
+    h.levels_total = LEVELS_TOTAL;
+    h.lev = lev;
+    h.px = px;
+    h.py = py;
+    h.pdir = pdir;
+    h.nchamps = nchamps;
+    h.nevents = nevents;
+    h.held = held;
+    h.game_time = game_time;
 
-    ok = hw_create (name) && hw_write (&s, sizeof s) == sizeof s;
-    for (l = 0; ok && l < NLEVELS; ++l) {
-        ok = copy_level (l, 1);
+    ok = hw_create (name) && hw_write (&h, sizeof h) == sizeof h;
+    for (i = 0; ok && i < 3; ++i) {
+        ok = hw_write (part_ptr[i], part_size[i]) == part_size[i];
+    }
+    for (i = 0; ok && i < NLEVELS; ++i) {
+        ok = copy_level (i, 1);
     }
     ok = hw_close_check () && ok;
+    redraw |= REDRAW_VIEW;
     msg (ok ? "GAME SAVED" : "SAVE FAILED: IS THE DISK FULL OR PROTECTED?");
+}
+
+static void damaged (void)
+{
+    hw_close ();
+    msg ("THE SAVED GAME IS DAMAGED. PRESS A KEY.");
+    wait_key ();
+    __asm__ ("jmp $FCE2");
 }
 
 unsigned char load_game (void)
 {
-    unsigned char l;
+    unsigned char i;
 
     if (!pick_slot ("LOAD A GAME")) {
         return 0;
     }
     msg ("LOADING...");
-    if (!hw_open (name) || hw_read (&s, sizeof s) != sizeof s ||
-        memcmp (s.magic, magic, sizeof magic) || s.version != SAVE_VERSION ||
-        s.levels_total != LEVELS_TOTAL) {
+    if (!hw_open (name) || hw_read (&h, sizeof h) != sizeof h ||
+        memcmp (h.magic, magic, sizeof magic) || h.version != SAVE_VERSION ||
+        h.levels_total != LEVELS_TOTAL) {
         hw_close ();
         msg ("THERE'S NO SAVED GAME IN THAT SLOT");
         return 0;
     }
-    /* From here on the levels are being replaced: a failure leaves no game to go back to. */
-    for (l = 0; l < NLEVELS; ++l) {
-        if (!copy_level (l, 0)) {
-            hw_close ();
-            msg ("THE SAVED GAME IS DAMAGED. PRESS A KEY.");
-            wait_key ();
-            __asm__ ("jmp $FCE2");
+    /* From here on the game is being replaced: a failure leaves none to go back to. */
+    for (i = 0; i < 3; ++i) {
+        if (hw_read (part_ptr[i], part_size[i]) != part_size[i]) {
+            damaged ();
+        }
+    }
+    for (i = 0; i < NLEVELS; ++i) {
+        if (!copy_level (i, 0)) {
+            damaged ();
         }
     }
     hw_close ();
 
-    px = s.px;
-    py = s.py;
-    pdir = s.pdir;
-    nchamps = s.nchamps;
-    nevents = s.nevents;
-    held = s.held;
-    game_time = s.game_time;
-    memcpy (champ, s.champ, sizeof champ);
-    memcpy (pool, s.pool, sizeof pool);
-    memcpy (events, s.events, sizeof events);
-    level_reload (s.lev);
+    px = h.px;
+    py = h.py;
+    pdir = h.pdir;
+    nchamps = h.nchamps;
+    nevents = h.nevents;
+    held = h.held;
+    game_time = h.game_time;
+    nproj = 0;
+    shield = 0;
+    shield_ticks = invisible_ticks = 0;
+    level_reload (h.lev);
     creatures_scan ();
     VIC.bordercolor = COLOR_BLACK;
     redraw = REDRAW_VIEW | REDRAW_PANEL;
