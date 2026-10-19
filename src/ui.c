@@ -1,14 +1,19 @@
 /*
-** ui.c - everything around the view: messages, the party panel, and the inventory screen.
+** ui.c - everything around the view: messages, the party panel, and input from the keyboard and
+** a mouse (or a joystick moving a pointer).
 **
 **   columns 0-23, rows 0-21   the 3D view (view.c), or the inventory and text boxes
-**   columns 25-39, rows 0-21  the party
+**   columns 25-39, rows 0-21  the party, what's in hand, and buttons
 **   rows 22-24                messages
+**
+** Clicks become keys: each screen lists the zones that can be clicked and the key each stands
+** for, so the code reading keys works the same with a mouse.
 */
 
 #include <string.h>
 #include <cbm.h>
 #include <c64.h>
+#include <mouse.h>
 #include "dm.h"
 
 #define PANEL_X 25
@@ -47,9 +52,17 @@ void ui_print (unsigned char x, unsigned char y, unsigned char col, const char* 
     }
 }
 
+static void put_glyph (unsigned char x, unsigned char y, unsigned char ch, unsigned char col)
+{
+    unsigned int p = y * 40 + x;
+
+    SCREEN[p] = ch;
+    COLOUR[p] = col;
+}
+
 static char num_buf[6];
 
-static const char* num (unsigned int n, unsigned char width)
+const char* ui_num (unsigned int n, unsigned char width)
 {
     unsigned char i = width;
 
@@ -64,14 +77,125 @@ static const char* num (unsigned int n, unsigned char width)
     return num_buf;
 }
 
+/* ---- input ------------------------------------------------------------------------------------ */
+
+#define MAXZONES 24
+static unsigned char zx[MAXZONES], zy[MAXZONES], zw[MAXZONES], zh[MAXZONES], zkey[MAXZONES];
+static unsigned char nzones;
+static unsigned char mouse_mode, last_buttons;     /* mouse_mode: 0 off, 1 mouse, 2 joystick */
+extern const struct mouse_callbacks mouse_callbacks;   /* mouse.s */
+
+void zones_clear (void)
+{
+    nzones = 0;
+}
+
+void zone (unsigned char x, unsigned char y, unsigned char w, unsigned char h, unsigned char key)
+{
+    if (nzones < MAXZONES) {
+        zx[nzones] = x;
+        zy[nzones] = y;
+        zw[nzones] = w;
+        zh[nzones] = h;
+        zkey[nzones++] = key;
+    }
+}
+
+/* Each champion's name and bars in the panel, as keys first, first + 1... */
+void zone_champions (unsigned char first)
+{
+    unsigned char i;
+
+    for (i = 0; i < nchamps; ++i) {
+        zone (PANEL_X, 2 + i * 4, 15, 2, first + i);
+    }
+}
+
+#define KEYS_WAITING (*(unsigned char*) 0x00C6)     /* KERNAL: keys in its buffer */
+
+/* A key, a click turned into a key, or 0. The right button is KEY_RIGHT, which backs out. */
+unsigned char get_input (void)
+{
+    unsigned char k, i, x, y;
+    struct mouse_info mi;
+
+    if (mouse_mode) {
+        mouse_info (&mi);
+        /* The mouse's buttons share lines with the keyboard, so the KERNAL sees phantom keys
+        ** while one is down: they're thrown away. */
+        if (mi.buttons | last_buttons) {
+            KEYS_WAITING = 0;
+        }
+        k = mi.buttons & ~last_buttons;
+        last_buttons = mi.buttons;
+        if (k & MOUSE_BTN_RIGHT) {
+            return KEY_RIGHT;
+        }
+        if (k & MOUSE_BTN_LEFT) {
+            x = mi.pos.x >> 3;
+            y = mi.pos.y >> 3;
+            for (i = 0; i < nzones; ++i) {
+                if (x >= zx[i] && x < zx[i] + zw[i] && y >= zy[i] && y < zy[i] + zh[i]) {
+                    return zkey[i];
+                }
+            }
+            return 0;
+        }
+    }
+    return cbm_k_getin ();
+}
+
 unsigned char wait_key (void)
 {
     unsigned char k;
 
-    while ((k = cbm_k_getin ()) == 0) {
+    while ((k = get_input ()) == 0) {
     }
     return k;
 }
+
+/* M: no pointer, a 1351 mouse in port 1, or a pointer moved by the joystick in port 2. */
+void mouse_cycle (void)
+{
+    if (mouse_mode) {
+        mouse_uninstall ();
+    }
+    mouse_mode = mouse_mode == 2 ? 0 : mouse_mode + 1;
+    if (mouse_mode && mouse_install (&mouse_callbacks,
+                                     mouse_mode == 1 ? c64_1351_mou : c64_joy_mou) != MOUSE_ERR_OK) {
+        mouse_mode = 0;
+    }
+    if (mouse_mode) {
+        mouse_show ();
+    }
+    last_buttons = 0;
+    msg (mouse_mode == 0 ? "MOUSE OFF" : mouse_mode == 1 ? "MOUSE IN PORT 1" : "JOYSTICK POINTER IN PORT 2");
+}
+
+/* The dungeon's own zones: the view, the champions, and the buttons under them. */
+void main_zones (void)
+{
+    static const unsigned char buttons[10][3] = {
+        { 25, 19, 'q' }, { 28, 19, 'w' }, { 31, 19, 'e' },
+        { 25, 20, 'a' }, { 28, 20, 's' }, { 31, 20, 'd' },
+        { 35, 19, 'c' }, { 35, 20, 133 }, { 35, 21, 134 }, { 25, 21, 'h' }
+    };
+    unsigned char i;
+
+    zones_clear ();
+    zone (0, 17, VIEW_W, 5, KEY_FLOOR);        /* the floor ahead: take or put down */
+    zone (0, 0, VIEW_W, 17, ' ');              /* the wall or door ahead: press it */
+    zone_champions (KEY_INVENTORY);
+    for (i = 0; i < nchamps; ++i) {
+        zone (PANEL_X, 4 + i * 4, 15, 1, '1' + i);  /* their hand: attack */
+    }
+    zone (PANEL_X, 17, 15, 2, KEY_FLOOR);
+    for (i = 0; i < 10; ++i) {
+        zone (buttons[i][0], buttons[i][1], i < 6 ? 3 : 4, 1, buttons[i][2]);
+    }
+}
+
+/* ---- messages --------------------------------------------------------------------------------- */
 
 /* The screen is in the RAM under the KERNAL, where the CPU reads ROM, so the message lines are
 ** kept here too, to scroll. */
@@ -112,11 +236,12 @@ void msg_text (const char* s)
     }
 }
 
+/* ---- the party panel ------------------------------------------------------------------------- */
+
 /* A bar of 4 characters, 32 steps, for value out of max. */
 static void bar (unsigned char x, unsigned char y, int value, int max, unsigned char col)
 {
     unsigned char filled, i, n;
-    unsigned int p = y * 40 + x;
 
     if (value < 0) value = 0;
     filled = max ? (unsigned char) (((unsigned long) value * 32) / max) : 0;
@@ -124,12 +249,14 @@ static void bar (unsigned char x, unsigned char y, int value, int max, unsigned 
     for (i = 0; i < 4; ++i) {
         n = filled > 8 ? 8 : filled;
         filled -= n;
-        SCREEN[p] = G_BAR0 + n;
-        COLOUR[p++] = col;
+        put_glyph (x + i, y, G_BAR0 + n, col);
     }
 }
 
 static const char dir_letter[4] = { 'N', 'E', 'S', 'W' };
+static const unsigned char pad_glyph[6] = {
+    G_TURN_L, G_ARROW_U, G_TURN_R, G_ARROW_L, G_ARROW_D, G_ARROW_R
+};
 
 void panel_draw (void)
 {
@@ -140,7 +267,7 @@ void panel_draw (void)
 
     ui_clear (PANEL_X, 0, 15, VIEW_H);
     ui_print (PANEL_X, 0, COLOR_GRAY3, "LEVEL");
-    ui_print (PANEL_X + 6, 0, COLOR_WHITE, num (levels[lev].depth + 1, 2));
+    ui_print (PANEL_X + 6, 0, COLOR_WHITE, ui_num (levels[lev].depth + 1, 2));
     d[0] = dir_letter[pdir];
     d[1] = 0;
     ui_print (PANEL_X + 10, 0, COLOR_GRAY3, "FACE");
@@ -168,8 +295,8 @@ void panel_draw (void)
         ui_print (PANEL_X, y + 2, COLOR_GRAY2, t == NONE ? "(EMPTY HAND)" : obj_name (t));
     }
 
-    ui_print (PANEL_X, 18, COLOR_GRAY3, "HAND:");
-    ui_print (PANEL_X, 19, COLOR_YELLOW, held == NONE ? "-" : obj_name (held));
+    ui_print (PANEL_X, 17, COLOR_GRAY3, "HAND");
+    ui_print (PANEL_X + 5, 17, COLOR_YELLOW, held == NONE ? "-" : obj_name (held));
     t = first_thing (px, py);
     for (i = 0; t != END; t = NEXT (t)) {
         if (TH_TYPE (t) >= T_WEAPON) {
@@ -177,104 +304,23 @@ void panel_draw (void)
         }
     }
     if (i) {
-        ui_print (PANEL_X, 21, COLOR_GRAY2, num (i, 2));
-        ui_print (PANEL_X + 3, 21, COLOR_GRAY2, "ON FLOOR");
+        ui_print (PANEL_X, 18, COLOR_GRAY2, ui_num (i, 2));
+        ui_print (PANEL_X + 3, 18, COLOR_GRAY2, "ON FLOOR");
     }
+
+    /* The movement pad (turn, forward, turn / left, back, right) and buttons. */
+    for (i = 0; i < 6; ++i) {
+        put_glyph (PANEL_X + 1 + (i % 3) * 3, 19 + i / 3, pad_glyph[i], COLOR_WHITE);
+    }
+    ui_print (35, 19, COLOR_LIGHTBLUE, "CAST");
+    ui_print (35, 20, COLOR_LIGHTGREEN, "SAVE");
+    ui_print (35, 21, COLOR_LIGHTGREEN, "LOAD");
+    ui_print (PANEL_X, 21, COLOR_GRAY2, "HELP");
 }
 
 void ui_init (void)
 {
     ui_clear (0, 0, 40, 25);
-    redraw = REDRAW_VIEW | REDRAW_PANEL;
-}
-
-/* ---- the inventory ------------------------------------------------------------------------- */
-
-static const char* const slot_names[NSLOTS] = {
-    "ACTION", "READY", "HEAD", "NECK", "TORSO", "LEGS", "FEET",
-    "PACK", "PACK", "PACK", "PACK", "PACK", "PACK", "PACK", "PACK"
-};
-static const unsigned char slot_needs[7] = { 0, 0, OBJ_HEAD, OBJ_NECK, OBJ_TORSO, OBJ_LEGS, OBJ_FEET };
-static const char* const stat_names[6] = { "STR", "DEX", "WIS", "VIT", "AM ", "AF " };
-static const char* const class_names[4] = { "FIG", "NIN", "PRI", "WIZ" };
-
-static void inventory_draw (unsigned char who)
-{
-    champion_t* c = &champ[who];
-    unsigned char i, y;
-    char letter[2];
-
-    sprites_off ();
-    ui_clear (0, 0, VIEW_W, VIEW_H);
-    ui_print (0, 0, COLOR_WHITE, c->name);
-    ui_print (8, 0, COLOR_GRAY3, c->title);
-    ui_clear (VIEW_W, 0, 1, 1);
-    ui_print (0, 1, COLOR_LIGHTGREEN, "HP");
-    ui_print (3, 1, COLOR_WHITE, num (c->hp, 3));
-    ui_print (6, 1, COLOR_GRAY2, "/");
-    ui_print (7, 1, COLOR_WHITE, num (c->maxhp, 3));
-    ui_print (12, 1, COLOR_YELLOW, "ST");
-    ui_print (15, 1, COLOR_WHITE, num (c->sta, 3));
-    ui_print (18, 1, COLOR_GRAY2, "/");
-    ui_print (19, 1, COLOR_WHITE, num (c->maxsta, 3));
-    ui_print (0, 2, COLOR_LIGHTBLUE, "MA");
-    ui_print (3, 2, COLOR_WHITE, num (c->mana, 3));
-    ui_print (6, 2, COLOR_GRAY2, "/");
-    ui_print (7, 2, COLOR_WHITE, num (c->maxmana, 3));
-    ui_print (12, 2, COLOR_ORANGE, "FOOD");
-    ui_print (17, 2, COLOR_WHITE, num (c->food, 3));
-    for (i = 0; i < 6; ++i) {
-        ui_print ((i % 3) * 8, 3 + i / 3, COLOR_GRAY3, stat_names[i]);
-        ui_print ((i % 3) * 8 + 4, 3 + i / 3, COLOR_WHITE, num (c->stat[i + 1], 3));
-    }
-    for (i = 0; i < 4; ++i) {
-        ui_print (i * 6, 5, COLOR_GRAY3, class_names[i]);
-        ui_print (i * 6 + 3, 5, COLOR_WHITE, num (c->skill[i], 2));
-    }
-    letter[1] = 0;
-    for (i = 0; i < NSLOTS; ++i) {
-        y = 7 + i;
-        letter[0] = 'A' + i;
-        ui_print (0, y, COLOR_YELLOW, letter);
-        ui_print (2, y, COLOR_GRAY2, slot_names[i]);
-        ui_print (9, y, COLOR_WHITE, c->slot[i] == NONE ? "-" : obj_name (c->slot[i]));
-    }
-    panel_draw ();
-}
-
-void inventory (void)
-{
-    unsigned char who = 0, k, s, f;
-    unsigned int t;
-
-    if (!nchamps) {
-        msg ("NO CHAMPIONS YET");
-        return;
-    }
-    msg ("A-O SWAP HAND  1-4 WHO  E EAT/DRINK/READ");
-    msg ("I OR SPACE: BACK TO THE DUNGEON");
-    for (;;) {
-        inventory_draw (who);
-        k = wait_key ();
-        if (k >= '1' && k < '1' + nchamps) {
-            who = k - '1';
-        } else if (k >= 'a' && k < 'a' + NSLOTS) {
-            s = k - 'a';
-            if (held != NONE && s < SL_PACK && slot_needs[s]) {
-                f = obj_flags[obj_info (held)];
-                if (!(f & slot_needs[s])) {
-                    msg ("IT DOESN'T GO THERE");
-                    continue;
-                }
-            }
-            t = champ[who].slot[s];
-            champ[who].slot[s] = held;
-            held = t;
-        } else if (k == 'e') {
-            use_held (who);
-        } else if (k == 'i' || k == ' ' || k == 13) {
-            break;
-        }
-    }
+    main_zones ();
     redraw = REDRAW_VIEW | REDRAW_PANEL;
 }

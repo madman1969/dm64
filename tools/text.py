@@ -16,6 +16,7 @@ HELP = [
     "I        INVENTORY",
     "X        EAT/DRINK/READ",
     "F1 / F3  SAVE / LOAD GAME",
+    "M        MOUSE ON/OFF",
     "H        THIS HELP",
     "",
     "FIND YOUR CHAMPIONS IN",

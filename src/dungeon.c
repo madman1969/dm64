@@ -44,40 +44,66 @@ unsigned int (*th_creature)[8];
 unsigned int (*th_obj)[2];
 unsigned int pool[POOL_SIZE][2];
 
-/* Copies DMLEV's level images into far memory. Returns 0 if they don't fit, or can't be read. */
+/* The overlays: code needed only now and then (overlay.c's list), linked to run in one area of
+** ordinary memory and kept in far memory, each copied in when it's called. The linker's config
+** (c64-dm64.cfg) defines the area; the build puts them in the DMOVL file, each padded to its
+** size. */
+#define NOVERLAYS 4
+extern unsigned char _OVL1_START__[], _OVL1_SIZE__[];
+#define OVL_START ((void*) _OVL1_START__)
+#define OVL_SIZE ((unsigned int) _OVL1_SIZE__)
+static farptr overlay_far;
+static unsigned char overlay_in = 255;
+
+void overlay (unsigned char n)
+{
+    if (n != overlay_in) {
+        far_read (OVL_START, overlay_far + (unsigned long) n * OVL_SIZE, OVL_SIZE);
+        overlay_in = n;
+    }
+}
+
+/* Copies a data file into far memory at p, through level_buf; returns where it ended, or 0. */
+static farptr load_far (const char* name, farptr p, unsigned long size)
+{
+    unsigned int n;
+
+    if (!hw_open (name)) {
+        return 0;
+    }
+    for (; size; size -= n, p += n) {
+        n = size > LEVEL_MAX ? LEVEL_MAX : (unsigned int) size;
+        if (hw_read (level_buf, n) != n) {
+            hw_close ();
+            return 0;
+        }
+        far_write (p, level_buf, n);
+    }
+    hw_close ();
+    return p;
+}
+
+/* Puts the level images (DMLEV) and overlays (DMOVL) in far memory, one after the other: there
+** past the few bytes FarMem's allocator keeps at the start, unused here. Returns 0 if they don't
+** fit, or can't be read. */
 unsigned char dungeon_init (void)
 {
     unsigned char l;
-    unsigned int n, left;
-    farptr p;
+    farptr p = 16;
 
     for (l = 0; l < POOL_SIZE; ++l) {
         pool[l][0] = NONE;
     }
-    if (far_init () == FAR_NONE || far_size () < LEVELS_TOTAL + 64) {
-        return 0;
-    }
-    if (!hw_open ("dmlev")) {
+    if (far_init () <= FAR_NEAR ||
+        far_size () < p + LEVELS_TOTAL + (unsigned long) NOVERLAYS * OVL_SIZE) {
         return 0;
     }
     for (l = 0; l < NLEVELS; ++l) {
-        p = level_far[l] = far_alloc (level_size[l]);
-        if (p == FAR_NULL) {
-            hw_close ();
-            return 0;
-        }
-        for (left = level_size[l]; left; left -= n) {
-            n = left > LEVEL_MAX ? LEVEL_MAX : left;
-            if (hw_read (level_buf, n) != n) {
-                hw_close ();
-                return 0;
-            }
-            far_write (p, level_buf, n);
-            p += n;
-        }
+        level_far[l] = p;
+        p += level_size[l];
     }
-    hw_close ();
-    return 1;
+    overlay_far = load_far ("dmlev", 16, LEVELS_TOTAL);
+    return overlay_far && load_far ("dmovl", overlay_far, (unsigned long) NOVERLAYS * OVL_SIZE);
 }
 
 void level_flush (void)

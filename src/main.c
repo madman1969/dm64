@@ -26,21 +26,6 @@ static void say (const char* s)
     cbm_k_bsout (RETURN);
 }
 
-/* The help text is in tools/text.py, kept in the RAM under the KERNAL. */
-static void help (void)
-{
-    unsigned char i;
-
-    sprites_off ();
-    ui_clear (0, 0, VIEW_W, VIEW_H);
-    ui_print (2, 1, COLOR_WHITE, "DUNGEON MASTER 64");
-    for (i = 0; i < NHELP; ++i) {
-        ui_print (0, 3 + i, COLOR_GRAY3, hi_str (help_line_at[i]));
-    }
-    wait_key ();
-    redraw = REDRAW_VIEW | REDRAW_PANEL;
-}
-
 static void key (unsigned char k)
 {
     switch (k) {
@@ -53,7 +38,9 @@ static void key (unsigned char k)
     case ' ':           click_wall (); break;
     case 't':           take_object (); break;
     case 'g':           drop_object (); break;
-    case 'i':           inventory (); break;
+    case 'i':           inventory (0); break;
+    case 'm':           mouse_cycle (); break;
+    case KEY_FLOOR:     if (held == NONE) take_object (); else drop_object (); break;
     case 'x':           use_held (0); break;
     case 'c':           cast_spell (); break;
     case 'h':           help (); break;
@@ -62,6 +49,10 @@ static void key (unsigned char k)
     case '1': case '2': case '3': case '4':
         attack (k - '1');
         break;
+    default:
+        if (k >= KEY_INVENTORY && k < KEY_INVENTORY + 4) {
+            inventory (k - KEY_INVENTORY);
+        }
     }
 }
 
@@ -97,7 +88,7 @@ int main (void)
 
     last = JIFFY;
     for (;;) {
-        k = cbm_k_getin ();
+        k = get_input ();
         if (k) {
             key (k);
         }
@@ -120,6 +111,9 @@ int main (void)
         if (nchamps && !party_alive ()) {
             msg ("THE PARTY HAS PERISHED.");
             msg ("F3: LOAD A GAME  ANY OTHER KEY: QUIT");
+            zones_clear ();
+            zone (0, 24, 15, 1, 134);
+            zone (0, 0, 40, 25, ' ');
             if (wait_key () != 134 || !load_game ()) {
                 __asm__ ("jmp $FCE2");
             }

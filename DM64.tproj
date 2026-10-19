@@ -32,8 +32,13 @@
     "src/party.c",
     "src/sensor.c",
     "src/creature.c",
-    "src/save.c",
     "src/magic.c",
+    "src/overlay.c",
+    "src/mouse.s",
+    "src/recruit.c",
+    "src/screens.c",
+    "src/cast.c",
+    "src/save.c",
     "gen/dmdata.c"
   ],
   "OutputFile": "bin/dm64.prg",
@@ -50,6 +55,6 @@
     "python -I tools\\dmconv.py \"Dungeon Master.stx\" gen bin"
   ],
   "PostBuildCommands": [
-    "C:\\GTK3VICE-3.9-win64\\bin\\c1541.exe -format \"dungeon master,64\" d64 bin\\dm64.d64 -write \"$(OutputFile)\" dm64 -write bin\\dmhi.bin dmhi -write bin\\dmlev.bin dmlev"
+    "powershell -NoProfile -ExecutionPolicy Bypass -File tools\\mkdisk.ps1"
   ]
 }

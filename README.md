@@ -27,13 +27,13 @@ Or open `DM64.tsln` in Tedide. It builds the FarMemC64 library, runs the convert
 pre-build step and makes the disk image as a post-build step. Its VICE arguments attach the disk
 image and add the REU.
 
-The disk holds three files: `DM64` (the program), `DMHI` and `DMLEV` (data). On a real machine:
-`LOAD"DM64",8,1` then `RUN`.
+The disk holds four files: `DM64` (the program), and `DMHI`, `DMLEV` and `DMOVL` (data and
+overlays). On a real machine: `LOAD"DM64",8,1` then `RUN`.
 
-Saved games go on the same disk, as `DMSAVE1` and `DMSAVE2` (133 blocks each; both fit). A
-rebuild with `build.ps1` keeps them. Tedide's post-build step doesn't, so copy them off first if
-you build there. A save only loads into a build made from the same game data, and
-`SAVE_VERSION` in `src/save.c` must go up whenever the saved structures change.
+Saved games go on the same disk, as `DMSAVE1` and `DMSAVE2` (133 blocks each; both fit). Both
+`build.ps1` and Tedide's post-build step (`tools\mkdisk.ps1`) keep them when they remake the
+disk image. A save only loads into a build made from the same game data, and `SAVE_VERSION` in
+`src/save.c` must go up whenever the saved structures change.
 
 ## Playing
 
@@ -55,9 +55,28 @@ champions. Each comes with their real statistics and possessions from the origin
 | C | Cast a spell (see below) |
 | H | Help |
 | F1, F3 | Save, load (slot 1 or 2). When the party dies, F3 loads a game |
+| M | Mouse: off, a 1351 mouse in port 1, or a pointer moved by a joystick in port 2 |
 
 The game runs in real time, as the original does. Creatures move and attack whether you press
 keys or not.
+
+### Mouse
+
+With the pointer on, everything can be clicked:
+
+- **The view:** the wall, door or mirror ahead presses it, as Space does. The floor (the lower
+  part of the view) takes an object, or puts down what's in your hand.
+- **A champion's name:** opens their inventory. **Their hand** (the line under the bars):
+  attacks.
+- **The pad under the party:** turn left, forward, turn right; step left, back, step right.
+  **CAST**, **SAVE**, **LOAD** and **HELP** do what they say.
+- **The inventory:** a slot swaps it with your hand. Click a champion to switch to them, or
+  **[EAT/DRINK]** or **[BACK]**.
+- **Casting:** the runes on offer, then **CAST**, **BACK** or **CANCEL**.
+- **The right button** backs out of any screen.
+
+A 1351's buttons share lines with the keyboard, so the C64 sees phantom key presses while one
+is down; the game throws those away.
 
 ### Magic
 
@@ -127,16 +146,18 @@ though less often the wiser they are.
 
 ```text
 $0400-$07FF  buffers (the default screen's RAM)           LOWBSS segment, c64-dm64.cfg
-$0801-$CBFF  the program, rules tables, the party's level (3K buffer), the party's objects
-             (about 300 bytes are left)
+$0801-$B3FF  the program, rules tables, the party's level (3K buffer), the party's objects
+$B400-$C2FF  free (about 3.8K)
+$C300-$CCFF  the overlay area: whichever overlay is in use (2.5K)
 $CD00-$CFFF  C stack (768 bytes)
 $D000-$DFFF  dungeon texts             } in the RAM under the I/O area and KERNAL,
 $E000-$E3FF  screen                    } loaded from DMHI. The video chip uses bank 3
-$E400-$E7FF  creature names, help      } and always sees RAM there. The CPU reads the
-$E800-$EFFF  character set             } texts and names with the ROMs switched out
-$F000-$F7FF  creature sprites          } (hw.c: hi_read, hi_str).
+$E400-$E7BF  creature names, help      } and always sees RAM there. The CPU reads the
+$E7C0-$E7FF  the mouse pointer         } texts and names with the ROMs switched out
+$E800-$EFFF  character set             } (hw.c: hi_read, hi_str).
+$F000-$F7FF  creature sprites          }
 $F800-$FFF9  object names              }
-far memory   the 14 level images, about 32K (DMLEV)
+far memory   the 14 level images, about 32K (DMLEV), then the overlays, 10K (DMOVL)
 ```
 
 Each level image (see the top of `tools/dmconv.py`) holds the level's squares, the start of
@@ -145,9 +166,12 @@ and objects. Things are numbered within the level, so the image can be copied in
 far memory whole. Objects the party picks up move into a separate pool (`dungeon.c`), which is
 how they cross levels.
 
-The C64's own RAM is now nearly full. The next features will need room made first: moving more
-of the program's text under the KERNAL, or trimming code. cc65's code is large, about 32K for
-this program.
+Code that's only needed now and then lives in **overlays** (`src/overlay.c`): recruiting,
+the inventory and help, the casting screen, and saving and loading. The linker (`c64-dm64.cfg`)
+builds each to run in the same 2.5K area, the build joins them into DMOVL, and the game keeps
+them in far memory, copying one into the area when it's called. An overlay can call anything in
+the main program, but nothing in another overlay. A new rarely used feature belongs in one.
+The largest (recruiting) sets the area's size, `__OVLSIZE__` in the config.
 
 ## Source
 
@@ -158,15 +182,21 @@ this program.
 | `tools/art.py` | The custom characters and creature sprites (hand-drawn, not DM's) |
 | `tools/text.py` | The game's own help text |
 | `tools/dmconv.py` | Writes `gen/dmdata.c`, `gen/glyphs.h`, `bin/dmlev.bin`, `bin/dmhi.bin` |
+| `tools/mkdisk.ps1` | Joins the overlays into DMOVL and makes the disk image, keeping saves |
 | `src/main.c` | Start-up, main loop, keys |
-| `src/dungeon.c` | Levels in far memory, squares, object lists, objects, texts |
+| `src/dungeon.c` | Levels and overlays in far memory, squares, object lists, objects, texts |
 | `src/view.c` | The 3D view and sprites |
-| `src/ui.c` | Messages, the party panel, the inventory |
-| `src/party.c` | Champions, recruiting, combat, eating and drinking |
+| `src/ui.c` | Messages, the party panel and its buttons, keyboard and mouse input |
+| `src/mouse.s` | The mouse pointer, for cc65's mouse drivers |
+| `src/party.c` | Champions: combat, eating and drinking |
 | `src/sensor.c` | Sensors, doors, pits, stairs, teleporters, moving and clicking |
 | `src/creature.c` | Creatures on the party's level |
-| `src/magic.c` | Casting spells, projectiles, potions and the other spells |
-| `src/save.c` | Saving and loading: the party, then every level image from far memory |
+| `src/magic.c` | Projectiles, and spells running down |
+| `src/overlay.c` | The way into each overlay |
+| `src/recruit.c` | Overlay: recruiting champions from the mirrors |
+| `src/screens.c` | Overlay: the inventory and help |
+| `src/cast.c` | Overlay: casting spells, potions and the other spells |
+| `src/save.c` | Overlay: saving and loading |
 | `src/hw.c` | Video bank, RAM under the ROMs, data files, sound |
 
 ## Licence

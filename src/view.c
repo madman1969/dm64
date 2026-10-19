@@ -360,7 +360,7 @@ static void square (signed char k, signed char l)
 
 void sprites_off (void)
 {
-    VIC.spr_ena = 0;
+    VIC.spr_ena &= 0x80;            /* the mouse pointer stays */
 }
 
 /* Is the way ahead clear to depth k (no wall or closed door in between)? */
@@ -386,7 +386,7 @@ static void place_sprites (void)
     unsigned char* ptrs = SCREEN + 0x3F8;
 
     if (!sprite_depth || !clear_to (sprite_depth)) {
-        VIC.spr_ena = 0;
+        VIC.spr_ena &= 0x80;
         return;
     }
     shape = creature_info[sprite_type].shape;
@@ -400,10 +400,10 @@ static void place_sprites (void)
         VIC.spr_pos[q].x = x + ((q & 1) ? (big ? 48 : 24) : 0);
         VIC.spr_pos[q].y = y + ((q & 2) ? (big ? 42 : 21) : 0);
     }
-    VIC.spr_hi_x = 0;
+    VIC.spr_hi_x &= 0x80;
     VIC.spr_exp_x = big ? 0x0F : 0;
     VIC.spr_exp_y = big ? 0x0F : 0;
-    VIC.spr_ena = 0x0F;
+    VIC.spr_ena = (VIC.spr_ena & 0x80) | 0x0F;
 }
 
 void view_draw (void)

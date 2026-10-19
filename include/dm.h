@@ -69,10 +69,7 @@ extern unsigned char view_chars[VIEW_W * VIEW_H];   /* the view is drawn here, t
 extern unsigned char view_cols[VIEW_W * VIEW_H];
 unsigned char hw_load_data (void);
 unsigned char hw_open (const char* name);
-unsigned char hw_create (const char* name);
 unsigned int hw_read (void* buf, unsigned int len);
-unsigned int hw_write (const void* buf, unsigned int len);
-unsigned char hw_close_check (void);
 void hw_close (void);
 void hw_init (void);
 void hi_read (void* dst, unsigned src, unsigned len);
@@ -97,6 +94,7 @@ extern unsigned int (*th_obj)[2];   /* weapons, armour, scrolls, potions, chests
 #define POOL_SIZE 64
 extern unsigned int pool[POOL_SIZE][2];
 unsigned char dungeon_init (void);
+void overlay (unsigned char n);             /* copy overlay n in from far memory (overlay.c) */
 void level_flush (void);                    /* the party's level back to far memory */
 void level_reload (unsigned char l);        /* read level l afresh from far memory */
 unsigned long level_far_addr (unsigned char l);
@@ -134,8 +132,18 @@ void msg_text (const char* s);              /* a multi-line dungeon text */
 void panel_draw (void);
 void ui_print (unsigned char x, unsigned char y, unsigned char col, const char* s);
 void ui_clear (unsigned char x, unsigned char y, unsigned char w, unsigned char h);
-void inventory (void);
-unsigned char wait_key (void);
+unsigned char wait_key (void);             /* a key, or a click on a zone */
+unsigned char get_input (void);            /* the same, or 0 if there's none */
+const char* ui_num (unsigned int n, unsigned char width);
+void zones_clear (void);
+void zone (unsigned char x, unsigned char y, unsigned char w, unsigned char h, unsigned char key);
+void zone_champions (unsigned char first);
+void main_zones (void);
+void mouse_cycle (void);
+/* Keys only clicks make. */
+#define KEY_RIGHT     3         /* the right mouse button: back out */
+#define KEY_INVENTORY 0xF0      /* +n: champion n's inventory */
+#define KEY_FLOOR     0xF8      /* the floor: take, or put down */
 extern unsigned char redraw;                /* REDRAW_ bits: what needs drawing again */
 #define REDRAW_VIEW  1
 #define REDRAW_PANEL 2
@@ -157,7 +165,6 @@ extern champion_t champ[4];
 extern unsigned char nchamps;
 extern unsigned int held;               /* the object in the party's hand (the mouse pointer in DM) */
 unsigned char party_alive (void);
-void recruit (void);
 void party_tick (void);
 void attack (unsigned char who);
 void damage_champion (unsigned char who, int amount);
@@ -204,14 +211,24 @@ extern proj_t proj[MAXPROJ];
 extern unsigned char nproj;
 extern unsigned int shield_ticks, invisible_ticks;
 extern unsigned char shield;
-void cast_spell (void);
 void magic_tick (void);
+void launch (unsigned char type, unsigned char power, unsigned char strength);
 signed char projectile_at (unsigned char x, unsigned char y);   /* proj[] index or -1 */
 unsigned char projectile_colour (unsigned char p);
 
-/* ---- save.c ---- */
+/* ---- overlay.c: the overlays, and the way into each ---- */
+void recruit (void);
+void inventory (unsigned char who);
+void help (void);
+void cast_spell (void);
 void save_game (void);
 unsigned char load_game (void);             /* 1 if a game was loaded */
+void ovl_recruit (void);
+void ovl_inventory (unsigned char who);
+void ovl_help (void);
+void ovl_cast (void);
+void ovl_save (void);
+unsigned char ovl_load (void);
 
 extern unsigned int game_time;
 

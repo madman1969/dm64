@@ -1,5 +1,6 @@
 /*
-** save.c - saving and loading the game, in two slots on the game disk (DMSAVE1, DMSAVE2).
+** save.c - saving and loading the game, in two slots on the game disk (DMSAVE1, DMSAVE2). An
+** overlay (see overlay in dungeon.c).
 **
 ** A save is a header, the champions, the party's objects and the waiting events, then every
 ** level image straight from far memory: the levels hold everything else that changes - doors,
@@ -8,11 +9,17 @@
 */
 
 #include <string.h>
+#include <cbm.h>
 #include <c64.h>
 #include "dm.h"
 #include "farmem.h"
 
+#pragma code-name (push, "OVL4")
+#pragma rodata-name (push, "OVL4")
+#pragma data-name (push, "OVL4")
+
 #define SAVE_VERSION 2
+#define DEVICE (*(unsigned char*) 0x00BA < 8 ? 8 : *(unsigned char*) 0x00BA)
 
 typedef struct {
     char magic[4];
@@ -34,6 +41,49 @@ static const unsigned int part_size[3] = { sizeof champ, sizeof pool, sizeof eve
 #define BUF      view_cols
 #define BUF_SIZE 256
 
+/* ---- writing files --------------------------------------------------------------------------- */
+
+static unsigned int put (const void* buf, unsigned int len)
+{
+    int n = cbm_write (2, buf, len);
+    return n < 0 ? 0 : n;
+}
+
+/* Replaces a file: scratches the old one first, rather than trusting the 1541's "@0:" save-
+** with-replace, then opens the new one for writing as a PRG with a dummy load address, so that
+** hw_open reads it back. */
+static unsigned char create (void)
+{
+    static char cmd[20] = "s0:";
+    unsigned int load = 0;
+
+    strcpy (cmd + 3, name);
+    cbm_open (15, DEVICE, 15, cmd);
+    cbm_close (15);
+    if (cbm_open (2, DEVICE, 1, name) != 0) {
+        cbm_close (2);
+        return 0;
+    }
+    return put (&load, 2) == 2;
+}
+
+/* Closes the file and asks the drive how it went: its status starts "00" when all is well. */
+static unsigned char close_check (void)
+{
+    char status[2] = { 0, 0 };
+
+    cbm_close (2);
+    if (cbm_open (15, DEVICE, 15, "") != 0) {
+        cbm_close (15);
+        return 0;
+    }
+    cbm_read (15, status, 2);
+    cbm_close (15);
+    return status[0] == '0' && status[1] == '0';
+}
+
+/* ---- saving and loading ---------------------------------------------------------------------- */
+
 /* Asks for a slot; 0 if the player backs out. */
 static unsigned char pick_slot (const char* what)
 {
@@ -41,6 +91,10 @@ static unsigned char pick_slot (const char* what)
 
     msg (what);
     msg ("SLOT 1 OR 2? (ANY OTHER KEY CANCELS)");
+    zones_clear ();
+    zone (4, 24, 3, 1, '1');
+    zone (9, 24, 3, 1, '2');
+    zone (0, 0, 40, 25, ' ');
     k = wait_key ();
     if (k != '1' && k != '2') {
         msg ("CANCELLED");
@@ -60,7 +114,7 @@ static unsigned char copy_level (unsigned char l, unsigned char saving)
         n = left > BUF_SIZE ? BUF_SIZE : left;
         if (saving) {
             far_read (BUF, p, n);
-            if (hw_write (BUF, n) != n) {
+            if (put (BUF, n) != n) {
                 return 0;
             }
         } else {
@@ -73,7 +127,7 @@ static unsigned char copy_level (unsigned char l, unsigned char saving)
     return 1;
 }
 
-void save_game (void)
+void ovl_save (void)
 {
     unsigned char i, ok;
 
@@ -94,14 +148,14 @@ void save_game (void)
     h.held = held;
     h.game_time = game_time;
 
-    ok = hw_create (name) && hw_write (&h, sizeof h) == sizeof h;
+    ok = create () && put (&h, sizeof h) == sizeof h;
     for (i = 0; ok && i < 3; ++i) {
-        ok = hw_write (part_ptr[i], part_size[i]) == part_size[i];
+        ok = put (part_ptr[i], part_size[i]) == part_size[i];
     }
     for (i = 0; ok && i < NLEVELS; ++i) {
         ok = copy_level (i, 1);
     }
-    ok = hw_close_check () && ok;
+    ok = close_check () && ok;
     redraw |= REDRAW_VIEW;
     msg (ok ? "GAME SAVED" : "SAVE FAILED: IS THE DISK FULL OR PROTECTED?");
 }
@@ -114,7 +168,7 @@ static void damaged (void)
     __asm__ ("jmp $FCE2");
 }
 
-unsigned char load_game (void)
+unsigned char ovl_load (void)
 {
     unsigned char i;
 
@@ -159,3 +213,7 @@ unsigned char load_game (void)
     msg ("GAME LOADED");
     return 1;
 }
+
+#pragma data-name (pop)
+#pragma rodata-name (pop)
+#pragma code-name (pop)

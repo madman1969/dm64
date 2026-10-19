@@ -1,12 +1,6 @@
 /*
-** party.c - the champions: recruiting them from the Hall of Champions' mirrors, their health,
-** their possessions, fighting, eating and drinking.
-**
-** Each mirror is a sensor on a wall; the champion's details are a text on the floor in front of
-** it, and their possessions lie on the mirror's side of the wall. The text is the champion's
-** name, title, a blank line, gender, then health, stamina (in tenths) and mana as three 4-digit
-** numbers, the seven statistics as 2-digit numbers, and sixteen skill levels as digits - all in
-** hexadecimal, written with A for 0 to P for 15.
+** party.c - the champions: their health, their possessions, fighting, eating and drinking.
+** Recruiting them is in recruit.c.
 */
 
 #include <stdlib.h>
@@ -18,39 +12,6 @@ champion_t champ[4];
 unsigned char nchamps;
 unsigned int held = NONE;
 
-static const char* line_ptr[8];
-
-static unsigned int hex (const char* s, unsigned char n)
-{
-    unsigned int v = 0;
-
-    while (n--) {
-        v = (v << 4) | ((*s++ - 'A') & 15);
-    }
-    return v;
-}
-
-static unsigned char split (const char* s)
-{
-    unsigned char n = 0;
-
-    line_ptr[n++] = s;
-    while (*s && n < 8) {
-        if (*s++ == '\n') {
-            line_ptr[n++] = s;
-        }
-    }
-    return n;
-}
-
-static void copy_line (char* dst, const char* src, unsigned char max)
-{
-    while (*src && *src != '\n' && --max) {
-        *dst++ = *src++;
-    }
-    *dst = 0;
-}
-
 unsigned char party_alive (void)
 {
     unsigned char i;
@@ -61,146 +22,6 @@ unsigned char party_alive (void)
         }
     }
     return 0;
-}
-
-static unsigned char place (champion_t* c, unsigned int t)
-{
-    unsigned char oi = obj_info (t), f = obj_flags[oi], s;
-
-    if (TH_TYPE (t) == T_WEAPON && c->slot[SL_ACTION] == NONE) {
-        s = SL_ACTION;
-    } else if ((f & OBJ_HEAD) && c->slot[SL_HEAD] == NONE) {
-        s = SL_HEAD;
-    } else if ((f & OBJ_NECK) && c->slot[SL_NECK] == NONE) {
-        s = SL_NECK;
-    } else if ((f & OBJ_TORSO) && c->slot[SL_TORSO] == NONE) {
-        s = SL_TORSO;
-    } else if ((f & OBJ_LEGS) && c->slot[SL_LEGS] == NONE) {
-        s = SL_LEGS;
-    } else if ((f & OBJ_FEET) && c->slot[SL_FEET] == NONE) {
-        s = SL_FEET;
-    } else {
-        for (s = SL_READY; s < NSLOTS && c->slot[s] != NONE; ++s) {
-            if (s == SL_READY) {
-                s = SL_PACK - 1;
-            }
-        }
-        if (s == NSLOTS) {
-            return 0;
-        }
-    }
-    c->slot[s] = t;
-    return 1;
-}
-
-/* Called with the party facing a mirror: shows the champion, and takes them on if asked. */
-void recruit (void)
-{
-    unsigned int t, *sensor = 0;
-    unsigned char ax = px + dir_dx[pdir], ay = py + dir_dy[pdir], cell = face_cell ();
-    unsigned char i, k, n;
-    const char* txt = 0;
-    champion_t* c;
-
-    for (t = first_thing (ax, ay); t != END; t = NEXT (t)) {
-        if (TH_CELL (t) == cell && TH_TYPE (t) == T_SENSOR && SENS_TYPE (thing_ptr (t)) == 127) {
-            sensor = thing_ptr (t);
-        }
-    }
-    for (t = first_thing (px, py); t != END; t = NEXT (t)) {
-        if (TH_TYPE (t) == T_TEXT) {
-            txt = text_decode (thing_ptr (t)[1] >> 3);
-        }
-    }
-    if (!sensor || !txt || split (txt) < 7) {
-        return;
-    }
-    sprites_off ();
-    ui_clear (0, 0, VIEW_W, VIEW_H);
-    for (i = 0; i < 2; ++i) {
-        static char buf[24];
-        copy_line (buf, line_ptr[i], sizeof buf);
-        ui_print (2, 3 + i * 2, i ? 7 : 1, buf);
-    }
-    ui_print (2, 8, 15, "HEALTH");
-    ui_print (2, 9, 15, "STAMINA");
-    ui_print (2, 10, 15, "MANA");
-    {
-        static char nb[6];
-        unsigned int v[3];
-        v[0] = hex (line_ptr[4], 4);
-        v[1] = hex (line_ptr[4] + 4, 4) / 10;
-        v[2] = hex (line_ptr[4] + 8, 4);
-        for (i = 0; i < 3; ++i) {
-            unsigned int x = v[i];
-            nb[3] = 0;
-            nb[2] = '0' + x % 10; x /= 10;
-            nb[1] = x ? '0' + x % 10 : ' '; x /= 10;
-            nb[0] = x ? '0' + x % 10 : ' ';
-            ui_print (11, 8 + i, 1, nb);
-        }
-    }
-    if (nchamps == 4) {
-        ui_print (2, 14, 10, "THE PARTY IS FULL");
-        wait_key ();
-        redraw = REDRAW_VIEW | REDRAW_PANEL;
-        return;
-    }
-    ui_print (2, 14, 13, "RECRUIT? (Y/N)");
-    k = wait_key ();
-    redraw = REDRAW_VIEW | REDRAW_PANEL;
-    if (k != 'y') {
-        return;
-    }
-
-    /* text_decode's buffer has been reused by now; decode the text again. */
-    for (t = first_thing (px, py); t != END; t = NEXT (t)) {
-        if (TH_TYPE (t) == T_TEXT) {
-            txt = text_decode (thing_ptr (t)[1] >> 3);
-        }
-    }
-    split (txt);
-    c = &champ[nchamps++];
-    memset (c, 0, sizeof *c);
-    copy_line (c->name, line_ptr[0], sizeof c->name);
-    copy_line (c->title, line_ptr[1], sizeof c->title);
-    c->hp = c->maxhp = hex (line_ptr[4], 4);
-    c->sta = c->maxsta = hex (line_ptr[4] + 4, 4) / 10;
-    c->mana = c->maxmana = hex (line_ptr[4] + 8, 4);
-    for (i = 0; i < 7; ++i) {
-        c->stat[i] = (unsigned char) hex (line_ptr[5] + i * 2, 2);
-    }
-    for (i = 0; i < 16; ++i) {
-        n = (unsigned char) hex (line_ptr[6] + i, 1);
-        if (n > c->skill[i >> 2]) {
-            c->skill[i >> 2] = n;
-        }
-    }
-    c->food = 200;
-    for (i = 0; i < NSLOTS; ++i) {
-        c->slot[i] = NONE;
-    }
-
-    /* Their possessions, from the mirror's side of the wall. */
-    t = first_thing (ax, ay);
-    while (t != END) {
-        unsigned int next = NEXT (t);
-        if (TH_CELL (t) == cell && TH_TYPE (t) >= T_WEAPON) {
-            unsigned int mine;
-            list_remove (ax, ay, t);
-            mine = to_party (t);
-            if (mine == NONE || !place (c, mine)) {
-                if (mine != NONE) {
-                    t = to_level (mine);
-                }
-                list_add (px, py, t);
-            }
-        }
-        t = next;
-    }
-    sensor[1] &= 0xFF80;            /* an empty mirror now */
-    msg (c->name);
-    msg ("JOINS THE PARTY");
 }
 
 unsigned char party_has_icon (unsigned char icon)

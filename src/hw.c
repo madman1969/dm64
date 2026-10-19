@@ -65,46 +65,6 @@ unsigned char hw_open (const char* name)
     return cbm_read (2, &skip, 2) == 2;
 }
 
-/* Replaces a file: scratches the old one first, rather than trusting the 1541's "@0:" save-
-** with-replace, then opens the new one for writing as a PRG with a dummy load address, so that
-** hw_open reads it back. */
-unsigned char hw_create (const char* name)
-{
-    static char cmd[20] = "s0:";
-    unsigned int load = 0;
-    unsigned char dev = LAST_DEVICE < 8 ? 8 : LAST_DEVICE;
-
-    strcpy (cmd + 3, name);
-    cbm_open (15, dev, 15, cmd);
-    cbm_close (15);
-    if (cbm_open (2, dev, 1, name) != 0) {
-        cbm_close (2);
-        return 0;
-    }
-    return hw_write (&load, 2) == 2;
-}
-
-unsigned int hw_write (const void* buf, unsigned int len)
-{
-    int n = cbm_write (2, buf, len);
-    return n < 0 ? 0 : n;
-}
-
-/* Closes the file and asks the drive how it went: its status starts "00" when all is well. */
-unsigned char hw_close_check (void)
-{
-    char status[2] = { 0, 0 };
-
-    cbm_close (2);
-    if (cbm_open (15, LAST_DEVICE < 8 ? 8 : LAST_DEVICE, 15, "") != 0) {
-        cbm_close (15);
-        return 0;
-    }
-    cbm_read (15, status, 2);
-    cbm_close (15);
-    return status[0] == '0' && status[1] == '0';
-}
-
 unsigned int hw_read (void* buf, unsigned int len)
 {
     int n = cbm_read (2, buf, len);
@@ -166,10 +126,14 @@ void hw_init (void)
     VIC.addr = (8 << 4) | (5 << 1);
     CIA2.pra &= 0xFC;
 
-    VIC.spr_mcolor = 0xFF;
+    /* Sprites 0-3 are creatures, in multicolour; sprite 7 is the mouse pointer (mouse.s), whose
+    ** image DMHI puts at HI_POINTER. */
+    VIC.spr_mcolor = 0x7F;
     VIC.spr_mcolor0 = COLOR_GRAY1;
     VIC.spr_mcolor1 = COLOR_WHITE;
     VIC.spr_ena = 0;
+    VIC.spr7_color = COLOR_WHITE;
+    SCREEN[0x3FF] = (HI_POINTER - 0xC000) / 64;
 
     SID.amp = 0x0F;
     SID.v1.ad = 0x09;

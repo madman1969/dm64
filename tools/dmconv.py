@@ -45,7 +45,8 @@ HI_TEXT = 0xD000
 HI_GLYPHS = 0xE800 + art.FIRST_GLYPH * 8
 HI_SPRITES = 0xF000
 HI_NAMES = 0xF800
-HI_STRINGS = 0xE400         # 1K, free: the screen ends at $E3FF
+HI_STRINGS = 0xE400         # the screen ends at $E3FF
+HI_POINTER = 0xE7C0         # the mouse pointer's sprite, after the strings
 
 # Food value of each junk type (by junk subtype); anything not listed isn't food.
 FOOD = {29: 30, 30: 30, 31: 40, 32: 45, 33: 50, 34: 50, 35: 60, 36: 110}
@@ -192,6 +193,7 @@ def main():
     h.append('#define NNAMES %d' % len(names))
     h.append('#define HI_TEXT 0x%04X\n#define HI_NAMES 0x%04X' % (HI_TEXT, HI_NAMES))
     h.append('#define HI_SPRITES 0x%04X' % HI_SPRITES)
+    h.append('#define HI_POINTER 0x%04X' % HI_POINTER)
     h.append('#define NHELP %d' % len(text.HELP))
     h.append('''
 typedef struct {
@@ -292,7 +294,7 @@ extern const unsigned char mana_multiplier[6];  /* in eighths, by power */
     for s in [cr[0] for cr in art.CREATURES] + text.HELP:
         at.append(HI_STRINGS + len(strings))
         strings += s.encode('ascii') + b'\0'
-    assert len(strings) <= 0x400, "too many strings for $E400-$E7FF"
+    assert HI_STRINGS + len(strings) <= HI_POINTER, "too many strings for $E400-$E7BF"
     c.append(carray('creature_name_at', 'unsigned int', at[:27], 9))
     c.append(carray('help_line_at', 'unsigned int', at[27:], 9))
 
@@ -316,7 +318,7 @@ extern const unsigned char mana_multiplier[6];  /* in eighths, by power */
     hi = bytearray()
     for addr, data in ((HI_TEXT, textdata), (HI_GLYPHS, art.glyph_bytes()),
                        (HI_SPRITES, sprites), (HI_NAMES, bytes(blob)),
-                       (HI_STRINGS, bytes(strings))):
+                       (HI_STRINGS, bytes(strings)), (HI_POINTER, art.pointer_bytes())):
         hi += struct.pack('<HH', addr, len(data)) + data
     hi += b'\0\0'
     with open(os.path.join(bindir, 'dmhi.bin'), 'wb') as f:
