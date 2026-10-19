@@ -108,6 +108,8 @@ extern const signed char dir_dx[4], dir_dy[4];
 void level_enter (unsigned char l);
 unsigned char* sq_ptr (unsigned char x, unsigned char y);
 unsigned char sq_at (unsigned char x, unsigned char y);        /* walls outside the map */
+void mark_seen (unsigned char x, unsigned char y);             /* for the map */
+unsigned char was_seen (unsigned char x, unsigned char y);
 unsigned int first_thing (unsigned char x, unsigned char y);
 unsigned int* thing_ptr (unsigned int t);
 #define NEXT(t) (*thing_ptr (t))
@@ -135,6 +137,7 @@ void ui_clear (unsigned char x, unsigned char y, unsigned char w, unsigned char 
 unsigned char wait_key (void);             /* a key, or a click on a zone */
 unsigned char get_input (void);            /* the same, or 0 if there's none */
 const char* ui_num (unsigned int n, unsigned char width);
+void ui_glyph (unsigned char x, unsigned char y, unsigned char ch, unsigned char col);
 void zones_clear (void);
 void zone (unsigned char x, unsigned char y, unsigned char w, unsigned char h, unsigned char key);
 void zone_champions (unsigned char first);
@@ -220,12 +223,14 @@ unsigned char projectile_colour (unsigned char p);
 void recruit (void);
 void inventory (unsigned char who);
 void help (void);
+void map (void);
 void cast_spell (void);
 void save_game (void);
 unsigned char load_game (void);             /* 1 if a game was loaded */
 void ovl_recruit (void);
 void ovl_inventory (unsigned char who);
 void ovl_help (void);
+void ovl_map (void);
 void ovl_cast (void);
 void ovl_save (void);
 unsigned char ovl_load (void);

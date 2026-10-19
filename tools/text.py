@@ -15,10 +15,10 @@ HELP = [
     "C        CAST A SPELL",
     "I        INVENTORY",
     "X        EAT/DRINK/READ",
+    "P        MAP",
     "F1 / F3  SAVE / LOAD GAME",
     "M        MOUSE ON/OFF",
     "H        THIS HELP",
-    "",
     "FIND YOUR CHAMPIONS IN",
     "THE HALL'S MIRRORS.",
 ]

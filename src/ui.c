@@ -52,7 +52,7 @@ void ui_print (unsigned char x, unsigned char y, unsigned char col, const char* 
     }
 }
 
-static void put_glyph (unsigned char x, unsigned char y, unsigned char ch, unsigned char col)
+void ui_glyph (unsigned char x, unsigned char y, unsigned char ch, unsigned char col)
 {
     unsigned int p = y * 40 + x;
 
@@ -175,10 +175,10 @@ void mouse_cycle (void)
 /* The dungeon's own zones: the view, the champions, and the buttons under them. */
 void main_zones (void)
 {
-    static const unsigned char buttons[10][3] = {
+    static const unsigned char buttons[11][3] = {
         { 25, 19, 'q' }, { 28, 19, 'w' }, { 31, 19, 'e' },
         { 25, 20, 'a' }, { 28, 20, 's' }, { 31, 20, 'd' },
-        { 35, 19, 'c' }, { 35, 20, 133 }, { 35, 21, 134 }, { 25, 21, 'h' }
+        { 35, 19, 'c' }, { 35, 20, 133 }, { 35, 21, 134 }, { 25, 21, 'h' }, { 30, 21, 'p' }
     };
     unsigned char i;
 
@@ -190,7 +190,7 @@ void main_zones (void)
         zone (PANEL_X, 4 + i * 4, 15, 1, '1' + i);  /* their hand: attack */
     }
     zone (PANEL_X, 17, 15, 2, KEY_FLOOR);
-    for (i = 0; i < 10; ++i) {
+    for (i = 0; i < 11; ++i) {
         zone (buttons[i][0], buttons[i][1], i < 6 ? 3 : 4, 1, buttons[i][2]);
     }
 }
@@ -249,7 +249,7 @@ static void bar (unsigned char x, unsigned char y, int value, int max, unsigned 
     for (i = 0; i < 4; ++i) {
         n = filled > 8 ? 8 : filled;
         filled -= n;
-        put_glyph (x + i, y, G_BAR0 + n, col);
+        ui_glyph (x + i, y, G_BAR0 + n, col);
     }
 }
 
@@ -310,12 +310,13 @@ void panel_draw (void)
 
     /* The movement pad (turn, forward, turn / left, back, right) and buttons. */
     for (i = 0; i < 6; ++i) {
-        put_glyph (PANEL_X + 1 + (i % 3) * 3, 19 + i / 3, pad_glyph[i], COLOR_WHITE);
+        ui_glyph (PANEL_X + 1 + (i % 3) * 3, 19 + i / 3, pad_glyph[i], COLOR_WHITE);
     }
     ui_print (35, 19, COLOR_LIGHTBLUE, "CAST");
     ui_print (35, 20, COLOR_LIGHTGREEN, "SAVE");
     ui_print (35, 21, COLOR_LIGHTGREEN, "LOAD");
     ui_print (PANEL_X, 21, COLOR_GRAY2, "HELP");
+    ui_print (30, 21, COLOR_GRAY3, "MAP");
 }
 
 void ui_init (void)

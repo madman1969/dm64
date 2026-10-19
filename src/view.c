@@ -30,6 +30,7 @@ static unsigned char fc, fcol;      /* what fill and put draw */
 static signed char sx, sy;          /* the square being drawn */
 static unsigned char sprite_depth;  /* 1 or 2 when a creature is right ahead, else 0 */
 static unsigned char sprite_type;
+static unsigned char sight;         /* how far ahead the party can see: the first wall, or 3 */
 
 static void fill (signed char x0, signed char y0, signed char x1, signed char y1)
 {
@@ -266,6 +267,9 @@ static void square (signed char k, signed char l)
     sx = px + k * dir_dx[pdir] + l * dir_dx[(pdir + 1) & 3];
     sy = py + k * dir_dy[pdir] + l * dir_dy[(pdir + 1) & 3];
     s = sq_at (sx, sy);
+    if (k <= sight) {
+        mark_seen (sx, sy);         /* for the map */
+    }
     type = SQ_TYPE (s);
 
     if (type == E_WALL || (type == E_FAKE && !(s & FAKE_OPEN))) {
@@ -427,6 +431,13 @@ void view_draw (void)
     memset (view_cols + CY * VIEW_W, COLOR_GRAY1, (VIEW_H - CY) * VIEW_W);
 
     sprite_depth = 0;
+    for (sight = 1; sight < 3; ++sight) {
+        y = sq_at (px + sight * dir_dx[pdir], py + sight * dir_dy[pdir]);
+        if (SQ_TYPE (y) == E_WALL || (SQ_TYPE (y) == E_FAKE && !(y & FAKE_OPEN)) ||
+            (SQ_TYPE (y) == E_DOOR && (y & DOOR_STATE) && (y & DOOR_STATE) < 5)) {
+            break;
+        }
+    }
     for (k = 3; k >= 0; --k) {
         for (i = 0; i < 5; ++i) {
             if ((lateral_order[i] == 2 || lateral_order[i] == -2) && k < 2) {

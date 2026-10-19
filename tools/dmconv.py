@@ -14,14 +14,16 @@ Nothing from the game is kept in the source tree: it all comes from your copy of
 
 A level image, all words little-endian:
   header   size, nfirsts, cap_firsts, then counts of doors, teleporters, texts, sensors,
-           creatures and objects, then the byte offsets of squares, colidx, firsts and those six
-           tables
+           creatures and objects, then the byte offsets of squares, colidx, firsts, those six
+           tables and the seen map
   squares  one byte each, column by column
   colidx   width + 1 words: where each column's object lists start in firsts
   firsts   the first thing of each square that has a list, with room for more
   tables   doors (2 words), teleporters (3), texts (2), sensors (4), creatures (8) and objects
            (2: next and one word of attributes; for a scroll, its text's offset; for a chest,
            its contents), each record starting with the next thing in its list
+  seen     128 bytes, a bit for each square the party has seen (for the map), all clear here:
+           square (x, y) is bit y & 7 of byte x * 4 + y / 8
 Things in a level's lists are numbered within that level. Spare objects have 0xFFFF as next."""
 import os
 import struct
@@ -36,7 +38,8 @@ import text     # noqa: E402
 SPARE_FIRSTS = 48           # room for objects dropped on squares that had none
 SPARE_OBJECTS = 48          # room for objects dropped on the level
 POOL_BASE = 960             # object numbers from here up are the party's (dungeon.c)
-HEADER_WORDS = 18
+HEADER_WORDS = 19
+SEEN_BYTES = 128            # a bit for each square of a 32x32 level: has the party seen it?
 REC_WORDS = {0: 2, 1: 3, 2: 2, 3: 4, 4: 8}      # doors .. creatures; objects are 2
 ITEM_TYPES = range(5, 11)
 
@@ -140,6 +143,8 @@ def level_image(D, m):
     for tab in range(6):
         offs.append(pos)
         pos += len(tables[tab]) * REC_WORDS.get(tab, 2) * 2
+    offs.append(pos)                                # the seen map
+    pos += SEEN_BYTES
     header = [pos, nfirsts, len(firsts)] + [len(tables[t]) for t in range(6)] + offs
     assert len(header) == HEADER_WORDS
     img = struct.pack('<%dH' % HEADER_WORDS, *header) + bytes(squares)
@@ -148,6 +153,7 @@ def level_image(D, m):
         for r in tables[tab]:
             assert len(r) == REC_WORDS.get(tab, 2)
             img += struct.pack('<%dH' % len(r), *r)
+    img += bytes(SEEN_BYTES)
     assert len(img) == pos
     return img
 

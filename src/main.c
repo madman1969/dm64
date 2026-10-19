@@ -44,6 +44,7 @@ static void key (unsigned char k)
     case 'x':           use_held (0); break;
     case 'c':           cast_spell (); break;
     case 'h':           help (); break;
+    case 'p':           map (); break;
     case 133:           save_game (); break;        /* F1 */
     case 134:           load_game (); break;        /* F3 */
     case '1': case '2': case '3': case '4':

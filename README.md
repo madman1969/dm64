@@ -53,6 +53,7 @@ champions. Each comes with their real statistics and possessions from the origin
 | I | Inventory: A-O swap your hand with a slot, 1-4 pick a champion, E eat/drink/read |
 | X | Eat, drink or read what's in your hand |
 | C | Cast a spell (see below) |
+| P | The map of the level, as far as the party has seen it |
 | H | Help |
 | F1, F3 | Save, load (slot 1 or 2). When the party dies, F3 loads a game |
 | M | Mouse: off, a 1351 mouse in port 1, or a pointer moved by a joystick in port 2 |
@@ -69,7 +70,7 @@ With the pointer on, everything can be clicked:
 - **A champion's name:** opens their inventory. **Their hand** (the line under the bars):
   attacks.
 - **The pad under the party:** turn left, forward, turn right; step left, back, step right.
-  **CAST**, **SAVE**, **LOAD** and **HELP** do what they say.
+  **CAST**, **SAVE**, **LOAD**, **HELP** and **MAP** do what they say.
 - **The inventory:** a slot swaps it with your hand. Click a champion to switch to them, or
   **[EAT/DRINK]** or **[BACK]**.
 - **Casting:** the runes on offer, then **CAST**, **BACK** or **CANCEL**.
@@ -125,6 +126,8 @@ though less often the wiser they are.
   the view (fireball, lightning, poison bolt and cloud, harm non-material, and ZO, which opens
   doors; fireballs blast open doors that can be burnt), potions cast into empty flasks (all
   nine), party and fire shields, invisibility (creatures stop chasing), and ZOKATHRA.
+- A map of each level, showing only what the party has seen: walls, doors, stairs, open pits,
+  visible teleporters and objects on the floor. It's kept with the level, so it's saved too.
 - Food, health/stamina/mana recovery, potions (VI, MON, EE, ROS, KU, DANE, NETA, water), and
   scrolls.
 
@@ -146,8 +149,8 @@ though less often the wiser they are.
 
 ```text
 $0400-$07FF  buffers (the default screen's RAM)           LOWBSS segment, c64-dm64.cfg
-$0801-$B3FF  the program, rules tables, the party's level (3K buffer), the party's objects
-$B400-$C2FF  free (about 3.8K)
+$0801-$B6FF  the program, rules tables, the party's level (3.2K buffer), the party's objects
+$B700-$C2FF  free (about 3.3K)
 $C300-$CCFF  the overlay area: whichever overlay is in use (2.5K)
 $CD00-$CFFF  C stack (768 bytes)
 $D000-$DFFF  dungeon texts             } in the RAM under the I/O area and KERNAL,
@@ -157,13 +160,13 @@ $E7C0-$E7FF  the mouse pointer         } texts and names with the ROMs switched 
 $E800-$EFFF  character set             } (hw.c: hi_read, hi_str).
 $F000-$F7FF  creature sprites          }
 $F800-$FFF9  object names              }
-far memory   the 14 level images, about 32K (DMLEV), then the overlays, 10K (DMOVL)
+far memory   the 14 level images, about 34K (DMLEV), then the overlays, 10K (DMOVL)
 ```
 
 Each level image (see the top of `tools/dmconv.py`) holds the level's squares, the start of
-each square's object list, and its own tables of doors, teleporters, texts, sensors, creatures
-and objects. Things are numbered within the level, so the image can be copied in and out of
-far memory whole. Objects the party picks up move into a separate pool (`dungeon.c`), which is
+each square's object list, its own tables of doors, teleporters, texts, sensors, creatures
+and objects, and a bit for each square the party has seen, for the map. Things are numbered
+within the level, so the image can be copied in and out of far memory whole. Objects the party picks up move into a separate pool (`dungeon.c`), which is
 how they cross levels.
 
 Code that's only needed now and then lives in **overlays** (`src/overlay.c`): recruiting,
@@ -194,7 +197,7 @@ The largest (recruiting) sets the area's size, `__OVLSIZE__` in the config.
 | `src/magic.c` | Projectiles, and spells running down |
 | `src/overlay.c` | The way into each overlay |
 | `src/recruit.c` | Overlay: recruiting champions from the mirrors |
-| `src/screens.c` | Overlay: the inventory and help |
+| `src/screens.c` | Overlay: the inventory, help and the map |
 | `src/cast.c` | Overlay: casting spells, potions and the other spells |
 | `src/save.c` | Overlay: saving and loading |
 | `src/hw.c` | Video bank, RAM under the ROMs, data files, sound |

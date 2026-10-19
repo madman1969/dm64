@@ -21,7 +21,7 @@
 typedef struct {
     unsigned int size, nfirsts, cap_firsts;
     unsigned int count[6];              /* doors, teleporters, texts, sensors, creatures, objects */
-    unsigned int off_sq, off_colidx, off_firsts, off_table[6];
+    unsigned int off_sq, off_colidx, off_firsts, off_table[6], off_seen;
 } image_t;
 
 static unsigned char level_buf[LEVEL_MAX];
@@ -34,6 +34,7 @@ const signed char dir_dx[4] = { 0, 1, 0, -1 };
 const signed char dir_dy[4] = { -1, 0, 1, 0 };
 
 static unsigned char* lsq;
+static unsigned char* lseen;
 static unsigned int* lcolidx;
 static unsigned int* lfirsts;
 unsigned int (*th_door)[2];
@@ -135,6 +136,7 @@ void level_enter (unsigned char l)
     lw = levels[l].w;
     lh = levels[l].h;
     lsq = level_buf + IMG->off_sq;
+    lseen = level_buf + IMG->off_seen;
     lcolidx = (unsigned int*) (level_buf + IMG->off_colidx);
     lfirsts = (unsigned int*) (level_buf + IMG->off_firsts);
     th_door = (void*) (level_buf + IMG->off_table[0]);
@@ -148,6 +150,21 @@ void level_enter (unsigned char l)
 unsigned char* sq_ptr (unsigned char x, unsigned char y)
 {
     return lsq + (unsigned int) x * lh + y;
+}
+
+/* The map: which squares the party has seen, a bit each, kept with the level. */
+static const unsigned char bit[8] = { 1, 2, 4, 8, 16, 32, 64, 128 };
+
+void mark_seen (unsigned char x, unsigned char y)
+{
+    if (x < lw && y < lh) {
+        lseen[(x << 2) | (y >> 3)] |= bit[y & 7];
+    }
+}
+
+unsigned char was_seen (unsigned char x, unsigned char y)
+{
+    return lseen[(x << 2) | (y >> 3)] & bit[y & 7];
 }
 
 unsigned char sq_at (unsigned char x, unsigned char y)
