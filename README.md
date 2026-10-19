@@ -5,14 +5,18 @@ built from **your own copy of the original disk**: the build reads `Dungeon Mast
 converts the real dungeon, texts, object names and rules tables. The C64 engine around them is
 new code, not a decompile.
 
+![Chani fights a mummy in a doorway on level 2, in VICE](docs/screenshot-mummy.png)
+
+*Chani fights a mummy in a doorway on level 2. Screenshot from VICE.*
+
 None of the game's data is in the source files. `tools/dmconv.py` extracts it into `gen/` and
 `bin/` at build time. Don't share those folders or the disk image they produce.
 
 ## What you need
 
-- **A C64 with a RAM expansion**: an REU (128K or more) or a SuperCPU. The 14 levels are kept in
-  far memory through the [FarMem](../Tedide/samples/FarMem) library. Only the level the party is
-  on sits in the C64's own RAM. In VICE, use `-reu -reusize 512`.
+- **A C64 with a RAM expansion**: an REU (128K or more) or a SuperCPU. The 14 levels and the
+  overlays are kept in far memory through the [FarMem](../Tedide/samples/FarMem) library. Only
+  the level the party is on sits in the C64's own RAM. In VICE, use `-reu -reusize 512`.
 - To build: Python 3, cc65 (`C:\cc65`), VICE 3.x (for `c1541`), and Tedide's FarMem sources in
   `..\Tedide\samples\FarMem`.
 
@@ -30,7 +34,7 @@ image and add the REU.
 The disk holds four files: `DM64` (the program), and `DMHI`, `DMLEV` and `DMOVL` (data and
 overlays). On a real machine: `LOAD"DM64",8,1` then `RUN`.
 
-Saved games go on the same disk, as `DMSAVE1` and `DMSAVE2` (133 blocks each; both fit). Both
+Saved games go on the same disk, as `DMSAVE1` and `DMSAVE2` (140 blocks each; both fit). Both
 `build.ps1` and Tedide's post-build step (`tools\mkdisk.ps1`) keep them when they remake the
 disk image. A save only loads into a build made from the same game data, and `SAVE_VERSION` in
 `src/save.c` must go up whenever the saved structures change.
@@ -77,7 +81,7 @@ With the pointer on, everything can be clicked:
 - **The right button** backs out of any screen.
 
 A 1351's buttons share lines with the keyboard, so the C64 sees phantom key presses while one
-is down; the game throws those away.
+is down; the game throws those away. Mouse support is new and has had little testing yet.
 
 ### Magic
 
@@ -108,6 +112,7 @@ though less often the wiser they are.
 
 - A first-person view in custom characters, with 45-degree perspective so the diagonals fit
   exactly. Creatures ahead are multicolour sprites; ones farther off or to the side are icons.
+  Writing on the wall ahead is drawn on the wall, as in DM; messages on the floor appear below.
 - Sensors: floor plates (anything, party, object, party carrying an object, facing a
   direction), wall switches, keyholes that keep the key, any-object and specific-object
   sensors, AND/OR gates and countdowns. Effects are set, clear, toggle and hold, with delays,
@@ -149,8 +154,8 @@ though less often the wiser they are.
 
 ```text
 $0400-$07FF  buffers (the default screen's RAM)           LOWBSS segment, c64-dm64.cfg
-$0801-$B6FF  the program, rules tables, the party's level (3.2K buffer), the party's objects
-$B700-$C2FF  free (about 3.3K)
+$0801-$B60C  the program, rules tables, the party's level (3.2K buffer), the party's objects
+$B60D-$C2FF  free (about 3.2K)
 $C300-$CCFF  the overlay area: whichever overlay is in use (2.5K)
 $CD00-$CFFF  C stack (768 bytes)
 $D000-$DFFF  dungeon texts             } in the RAM under the I/O area and KERNAL,
@@ -166,11 +171,11 @@ far memory   the 14 level images, about 34K (DMLEV), then the overlays, 10K (DMO
 Each level image (see the top of `tools/dmconv.py`) holds the level's squares, the start of
 each square's object list, its own tables of doors, teleporters, texts, sensors, creatures
 and objects, and a bit for each square the party has seen, for the map. Things are numbered
-within the level, so the image can be copied in and out of far memory whole. Objects the party picks up move into a separate pool (`dungeon.c`), which is
-how they cross levels.
+within the level, so the image can be copied in and out of far memory whole. Objects the party
+picks up move into a separate pool (`dungeon.c`), which is how they cross levels.
 
 Code that's only needed now and then lives in **overlays** (`src/overlay.c`): recruiting,
-the inventory and help, the casting screen, and saving and loading. The linker (`c64-dm64.cfg`)
+the inventory, help and the map, the casting screen, and saving and loading. The linker (`c64-dm64.cfg`)
 builds each to run in the same 2.5K area, the build joins them into DMOVL, and the game keeps
 them in far memory, copying one into the area when it's called. An overlay can call anything in
 the main program, but nothing in another overlay. A new rarely used feature belongs in one.
@@ -181,7 +186,7 @@ The largest (recruiting) sets the area's size, `__OVLSIZE__` in the config.
 | File | |
 | --- | --- |
 | `tools/dmdat.py` | Reads the STX (Pasti) disk image, its FAT12 file system, and `DUNGEON.DAT` |
-| `tools/dmgfx.py` | Unpacks `GRAPHICS.DAT`: object names and the rules tables |
+| `tools/dmgfx.py` | Unpacks `GRAPHICS.DAT`: object names, the rules tables and the spells |
 | `tools/art.py` | The custom characters and creature sprites (hand-drawn, not DM's) |
 | `tools/text.py` | The game's own help text |
 | `tools/dmconv.py` | Writes `gen/dmdata.c`, `gen/glyphs.h`, `bin/dmlev.bin`, `bin/dmhi.bin` |
