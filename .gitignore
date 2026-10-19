@@ -1,0 +1,18 @@
+# The original game and everything extracted from it: never commit these.
+*.stx
+*.STX
+gen/
+bin/
+
+# Build output
+obj/
+*.o
+*.map
+*.lbl
+*.dbg
+
+# Python
+__pycache__/
+
+# Tedide per-user state
+*.session.json

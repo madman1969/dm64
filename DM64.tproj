@@ -1,0 +1,53 @@
+{
+  "Name": "DM64",
+  "Target": "C64",
+  "OutputType": "Application",
+  "ProjectReferences": [
+    "../Tedide/samples/FarMem/FarMemC64/FarMemC64.tproj"
+  ],
+  "OptimizationLevel": "Maximum",
+  "GenerateAssemblyListing": false,
+  "AddSourceAsComment": false,
+  "GenerateLinkerMap": true,
+  "GenerateDebugInfo": true,
+  "ExportLabels": true,
+  "EnableSuperCpu": false,
+  "ViceArguments": [
+    "-reu",
+    "-reusize",
+    "512",
+    "+drive8truedrive",
+    "-virtualdev8",
+    "-8",
+    "bin/dm64.d64"
+  ],
+  "UseOpt6502": false,
+  "Opt6502Mode": "Size",
+  "SourceFiles": [
+    "src/main.c",
+    "src/dungeon.c",
+    "src/hw.c",
+    "src/view.c",
+    "src/ui.c",
+    "src/party.c",
+    "src/sensor.c",
+    "src/creature.c",
+    "gen/dmdata.c"
+  ],
+  "OutputFile": "bin/dm64.prg",
+  "LinkerConfigPath": "c64-dm64.cfg",
+  "IncludePaths": [
+    "include",
+    "gen"
+  ],
+  "PreprocessorDefines": [],
+  "ExtraArguments": [
+    "-Cl"
+  ],
+  "PreBuildCommands": [
+    "python -I tools\\dmconv.py \"Dungeon Master.stx\" gen bin"
+  ],
+  "PostBuildCommands": [
+    "C:\\GTK3VICE-3.9-win64\\bin\\c1541.exe -format \"dungeon master,64\" d64 bin\\dm64.d64 -write \"$(OutputFile)\" dm64 -write bin\\dmhi.bin dmhi -write bin\\dmlev.bin dmlev"
+  ]
+}

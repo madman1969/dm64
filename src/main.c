@@ -1,0 +1,139 @@
+/*
+** main.c - Dungeon Master for the Commodore 64: start-up and the main loop.
+**
+** The game runs in real time, like the original: ten game ticks a second, timed from the
+** KERNAL's jiffy clock, move doors and creatures whether or not a key is pressed.
+*/
+
+#include <stdlib.h>
+#include <cbm.h>
+#include <c64.h>
+#include "dm.h"
+
+unsigned int game_time;
+
+#define JIFFY (*(volatile unsigned char*) 0x00A2)
+#define RETURN 13
+
+static void say (const char* s)
+{
+    /* cc65 turns upper-case literals into PETSCII's shifted letters; the KERNAL's upper-case
+    ** set wants them unshifted. */
+    while (*s) {
+        cbm_k_bsout (*s >= 0xC1 && *s <= 0xDA ? *s - 0x80 : *s);
+        ++s;
+    }
+    cbm_k_bsout (RETURN);
+}
+
+static void help (void)
+{
+    static const char* const lines[] = {
+        "W/UP     FORWARD",
+        "S/DOWN   BACK",
+        "A D      STEP LEFT/RIGHT",
+        "Q/LEFT   TURN LEFT",
+        "E/RIGHT  TURN RIGHT",
+        "SPACE    PRESS/USE WALL,",
+        "         DOOR OR MIRROR",
+        "T        TAKE AN OBJECT",
+        "G        PUT HAND DOWN",
+        "1-4      CHAMPION ATTACKS",
+        "I        INVENTORY",
+        "X        EAT/DRINK/READ",
+        "H        THIS HELP",
+        "",
+        "FIND YOUR CHAMPIONS IN",
+        "THE HALL'S MIRRORS.",
+    };
+    unsigned char i;
+
+    sprites_off ();
+    ui_clear (0, 0, VIEW_W, VIEW_H);
+    ui_print (2, 1, COLOR_WHITE, "DUNGEON MASTER 64");
+    for (i = 0; i < sizeof lines / sizeof lines[0]; ++i) {
+        ui_print (0, 3 + i, COLOR_GRAY3, lines[i]);
+    }
+    wait_key ();
+    redraw = REDRAW_VIEW | REDRAW_PANEL;
+}
+
+static void key (unsigned char k)
+{
+    switch (k) {
+    case 'w': case 145: move_party (1, 0); break;
+    case 's': case 17:  move_party (-1, 0); break;
+    case 'a':           move_party (0, -1); break;
+    case 'd':           move_party (0, 1); break;
+    case 'q': case 157: turn_party (-1); break;
+    case 'e': case 29:  turn_party (1); break;
+    case ' ':           click_wall (); break;
+    case 't':           take_object (); break;
+    case 'g':           drop_object (); break;
+    case 'i':           inventory (); break;
+    case 'x':           use_held (0); break;
+    case 'h':           help (); break;
+    case '1': case '2': case '3': case '4':
+        attack (k - '1');
+        break;
+    }
+}
+
+int main (void)
+{
+    unsigned char last, k;
+
+    cbm_k_bsout (147);
+    say ("DUNGEON MASTER 64");
+    say ("");
+    say ("LOADING...");
+    if (!hw_load_data ()) {
+        say ("CAN'T LOAD DMHI");
+        return 1;
+    }
+    if (!dungeon_init ()) {
+        say ("THIS GAME NEEDS A RAM EXPANSION:");
+        say ("AN REU (128K OR MORE) OR A SUPERCPU.");
+        return 1;
+    }
+    hw_init ();
+    ui_init ();
+    srand (JIFFY);
+
+    level_enter (0);
+    px = START_X;
+    py = START_Y;
+    pdir = START_DIR;
+    sensors_init ();
+    creatures_scan ();
+    msg ("WELCOME TO THE DUNGEON.");
+    msg ("PRESS H FOR HELP.");
+
+    last = JIFFY;
+    for (;;) {
+        k = cbm_k_getin ();
+        if (k) {
+            key (k);
+        }
+        while ((unsigned char) (JIFFY - last) >= 6) {
+            last += 6;
+            ++game_time;
+            events_tick ();
+            creatures_tick ();
+            party_tick ();
+            sound_tick ();
+        }
+        if (redraw & REDRAW_VIEW) {
+            view_draw ();
+        }
+        if (redraw & REDRAW_PANEL) {
+            panel_draw ();
+        }
+        redraw = 0;
+        if (nchamps && !party_alive ()) {
+            msg ("THE PARTY HAS PERISHED.");
+            wait_key ();
+            __asm__ ("jmp $FCE2");
+        }
+    }
+}

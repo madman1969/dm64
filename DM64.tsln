@@ -1,0 +1,8 @@
+{
+  "Name": "DM64",
+  "ProjectPaths": [
+    "DM64.tproj",
+    "../Tedide/samples/FarMem/FarMemC64/FarMemC64.tproj"
+  ],
+  "StartupProject": "DM64.tproj"
+}
