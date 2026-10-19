@@ -21,16 +21,26 @@ if ($LASTEXITCODE) { throw "dmconv failed" }
 
 $sources = @(
     "src\main.c", "src\dungeon.c", "src\hw.c", "src\view.c", "src\ui.c", "src\party.c",
-    "src\sensor.c", "src\creature.c", "gen\dmdata.c",
+    "src\sensor.c", "src\creature.c", "src\save.c", "gen\dmdata.c",
     "$FarMem\src\farmem.c", "$FarMem\src\faralloc.c", "$FarMem\src\farhw.s"
 )
 & "$Cc65\cl65.exe" -t c64 -O -Cl -C c64-dm64.cfg -I include -I gen -I "$FarMem\include" `
     --obj-path obj -m bin\dm64.map -o bin\dm64.prg @sources
 if ($LASTEXITCODE) { throw "cl65 failed" }
 
+# Saved games on the old disk image survive the rebuild: copied off, and back onto the new one.
+$saves = @()
+if (Test-Path bin\dm64.d64) {
+    foreach ($slot in "dmsave1", "dmsave2") {
+        Remove-Item "obj\$slot" -ErrorAction SilentlyContinue
+        & "$Vice\c1541.exe" -attach bin\dm64.d64 -read $slot "obj\$slot" 2>&1 | Out-Null
+        if (Test-Path "obj\$slot") { $saves += "-write", "obj\$slot", $slot }
+    }
+}
 & "$Vice\c1541.exe" -format "dungeon master,64" d64 bin\dm64.d64 `
-    -write bin\dm64.prg dm64 -write bin\dmhi.bin dmhi -write bin\dmlev.bin dmlev | Out-Null
+    -write bin\dm64.prg dm64 -write bin\dmhi.bin dmhi -write bin\dmlev.bin dmlev @saves | Out-Null
 if ($LASTEXITCODE) { throw "c1541 failed" }
+if ($saves) { Write-Host "Kept saved games:" ($saves | Where-Object { $_ -like "dmsave*" }) }
 Write-Host "Built bin\dm64.d64"
 
 if ($Run) {

@@ -30,6 +30,11 @@ image and add the REU.
 The disk holds three files: `DM64` (the program), `DMHI` and `DMLEV` (data). On a real machine:
 `LOAD"DM64",8,1` then `RUN`.
 
+Saved games go on the same disk, as `DMSAVE1` and `DMSAVE2` (133 blocks each; both fit). A
+rebuild with `build.ps1` keeps them. Tedide's post-build step doesn't, so copy them off first if
+you build there. A save only loads into a build made from the same game data, and
+`SAVE_VERSION` in `src/save.c` must go up whenever the saved structures change.
+
 ## Playing
 
 You start outside the Hall of Champions. Walk in, look into the mirrors, and recruit up to four
@@ -48,6 +53,7 @@ champions. Each comes with their real statistics and possessions from the origin
 | I | Inventory: A-O swap your hand with a slot, 1-4 pick a champion, E eat/drink/read |
 | X | Eat, drink or read what's in your hand |
 | H | Help |
+| F1, F3 | Save, load (slot 1 or 2). When the party dies, F3 loads a game |
 
 The game runs in real time, as the original does. Creatures move and attack whether you press
 keys or not.
@@ -93,15 +99,14 @@ keys or not.
   and creatures.
 - DM's own graphics (wall and floor decorations, champion portraits, creature pictures) and
   sound.
-- Saving and loading.
 - The endgame: the Firestaff, Lord Chaos and the fluxcage.
 
 ## How it fits in a C64
 
 ```text
 $0400-$07FF  buffers (the default screen's RAM)           LOWBSS segment, c64-dm64.cfg
-$0801-$B2FF  the program, rules tables, the party's level (3K buffer), the party's objects
-$B300-$CBFF  free (about 6K)
+$0801-$BDFF  the program, rules tables, the party's level (3K buffer), the party's objects
+$BE00-$CBFF  free (about 3.5K)
 $CC00-$CFFF  C stack
 $D000-$DFFF  dungeon texts             } in the RAM under the I/O area and KERNAL,
 $E000-$E3FF  screen                    } loaded from DMHI. The video chip uses bank 3
@@ -132,4 +137,5 @@ how they cross levels.
 | `src/party.c` | Champions, recruiting, combat, eating and drinking |
 | `src/sensor.c` | Sensors, doors, pits, stairs, teleporters, moving and clicking |
 | `src/creature.c` | Creatures on the party's level |
+| `src/save.c` | Saving and loading: the party, then every level image from far memory |
 | `src/hw.c` | Video bank, RAM under the ROMs, data files, sound |

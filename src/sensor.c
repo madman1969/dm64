@@ -11,16 +11,10 @@
 #include <stdlib.h>
 #include "dm.h"
 
-#define MAXEVENTS 16
 enum { EV_DOOR, EV_EFFECT };
 
-typedef struct {
-    unsigned int time;
-    unsigned char kind, lev, x, y, cell, effect;
-} event_t;
-
-static event_t events[MAXEVENTS];
-static unsigned char nevents;
+event_t events[MAXEVENTS];
+unsigned char nevents;
 static unsigned char depth_guard;       /* stops teleporters that lead into each other */
 
 static void schedule (unsigned char kind, unsigned char delay, unsigned char x, unsigned char y,

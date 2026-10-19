@@ -69,7 +69,10 @@ extern unsigned char view_chars[VIEW_W * VIEW_H];   /* the view is drawn here, t
 extern unsigned char view_cols[VIEW_W * VIEW_H];
 unsigned char hw_load_data (void);
 unsigned char hw_open (const char* name);
+unsigned char hw_create (const char* name);
 unsigned int hw_read (void* buf, unsigned int len);
+unsigned int hw_write (const void* buf, unsigned int len);
+unsigned char hw_close_check (void);
 void hw_close (void);
 void hw_init (void);
 void hi_read (void* dst, unsigned src, unsigned len);
@@ -93,6 +96,9 @@ extern unsigned int (*th_obj)[2];   /* weapons, armour, scrolls, potions, chests
 #define POOL_SIZE 64
 extern unsigned int pool[POOL_SIZE][2];
 unsigned char dungeon_init (void);
+void level_flush (void);                    /* the party's level back to far memory */
+void level_reload (unsigned char l);        /* read level l afresh from far memory */
+unsigned long level_far_addr (unsigned char l);
 unsigned int to_party (unsigned int t);     /* a level's object -> the party's */
 unsigned int to_level (unsigned int t);     /* and back, NONE if the level is full */
 void pool_free (unsigned int t);
@@ -158,6 +164,14 @@ unsigned char party_has_icon (unsigned char icon);
 unsigned char armour_total (unsigned char who);
 
 /* ---- sensor.c ---- */
+/* Things waiting to happen: doors moving, and sensors' delayed effects. */
+#define MAXEVENTS 16
+typedef struct {
+    unsigned int time;
+    unsigned char kind, lev, x, y, cell, effect;
+} event_t;
+extern event_t events[MAXEVENTS];
+extern unsigned char nevents;
 void sensors_init (void);
 void events_tick (void);
 void party_entered (void);
@@ -179,6 +193,10 @@ void creatures_scan (void);
 void creatures_tick (void);
 signed char creature_at (unsigned char x, unsigned char y);   /* active[] index or -1 */
 void hit_creature (signed char a, int dmg);
+
+/* ---- save.c ---- */
+void save_game (void);
+unsigned char load_game (void);             /* 1 if a game was loaded */
 
 extern unsigned int game_time;
 

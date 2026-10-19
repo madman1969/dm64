@@ -80,14 +80,30 @@ unsigned char dungeon_init (void)
     return 1;
 }
 
+void level_flush (void)
+{
+    if (lev != 255) {
+        far_write (level_far[lev], level_buf, level_size[lev]);
+    }
+}
+
+void level_reload (unsigned char l)
+{
+    lev = 255;
+    level_enter (l);
+}
+
+unsigned long level_far_addr (unsigned char l)
+{
+    return level_far[l];
+}
+
 void level_enter (unsigned char l)
 {
     if (l == lev) {
         return;
     }
-    if (lev != 255) {
-        far_write (level_far[lev], level_buf, level_size[lev]);
-    }
+    level_flush ();
     far_read (level_buf, level_far[l], level_size[l]);
     lev = l;
     lw = levels[l].w;

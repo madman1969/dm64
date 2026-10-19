@@ -32,6 +32,7 @@
     "src/party.c",
     "src/sensor.c",
     "src/creature.c",
+    "src/save.c",
     "gen/dmdata.c"
   ],
   "OutputFile": "bin/dm64.prg",

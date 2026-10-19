@@ -42,6 +42,7 @@ static void help (void)
         "I        INVENTORY",
         "X        EAT/DRINK/READ",
         "H        THIS HELP",
+        "F1 / F3  SAVE / LOAD GAME",
         "",
         "FIND YOUR CHAMPIONS IN",
         "THE HALL'S MIRRORS.",
@@ -73,6 +74,8 @@ static void key (unsigned char k)
     case 'i':           inventory (); break;
     case 'x':           use_held (0); break;
     case 'h':           help (); break;
+    case 133:           save_game (); break;        /* F1 */
+    case 134:           load_game (); break;        /* F3 */
     case '1': case '2': case '3': case '4':
         attack (k - '1');
         break;
@@ -132,8 +135,10 @@ int main (void)
         redraw = 0;
         if (nchamps && !party_alive ()) {
             msg ("THE PARTY HAS PERISHED.");
-            wait_key ();
-            __asm__ ("jmp $FCE2");
+            msg ("F3: LOAD A GAME  ANY OTHER KEY: QUIT");
+            if (wait_key () != 134 || !load_game ()) {
+                __asm__ ("jmp $FCE2");
+            }
         }
     }
 }
