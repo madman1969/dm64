@@ -1,13 +1,13 @@
 /*
 ** view.c - the party's 3D view, built as Dungeon Master builds it: DM's own pictures of the
-** ceiling and floor, then of walls, doors and stairs, far to near (DMWAL, made by
+** ceiling and floor, then far to near each square's walls and their ornaments, doors, stairs,
+** pits, floor ornaments, objects, spells in flight and teleporter fields (DMWAL, made by
 ** tools/dmview.py), drawn into the multicolour bitmap at the top left of the screen (bitmap.s).
 ** 28x17 cells, the size of DM's view (224x136), each cell's pixels in four colours: the
 ** background (grey), two greys every cell shares, and one of its own.
 **
 ** Squares are seen at depths 0 (the party's own) to 3, and up to two squares to each side, drawn
-** in DM's order. What isn't a picture of DM's yet (objects, wall decorations, pits, teleporters,
-** projectiles) is drawn over it as small icons; creatures are sprites, made from DM's pictures.
+** in DM's order. Creatures are sprites, made from DM's pictures.
 */
 
 #include <string.h>
@@ -22,17 +22,23 @@ static const signed char sq_l[NSQUARES] = { -2, 2, -1, 1, 0, -1, 1, 0, -1, 1, 0,
 static const unsigned char sq_frame[NSQUARES] = {        /* door frames; panels the first 9 */
     255, 255, 0, 1, 2, 3, 4, 5, 6, 7, 8, 255, 255, 9
 };
+static const unsigned char door_button[NSQUARES] = {      /* D3R, D3C, D2C, D1C */
+    255, 255, 255, 0, 1, 255, 255, 2, 255, 255, 3, 255, 255, 255
+};
+static const unsigned char sq_vsq[NSQUARES] = {         /* view squares, as objects see them */
+    255, 255, 1, 2, 0, 4, 5, 3, 7, 8, 6, 255, 255, 9
+};
+static const unsigned char sq_pos[NSQUARES] = {         /* floor places (dmview.py) */
+    255, 255, 0, 2, 1, 3, 5, 4, 6, 8, 7, 9, 11, 10
+};
 static const unsigned char sq_stairs[NSQUARES] = {
     255, 255, 0, 2, 1, 3, 5, 4, 6, 8, 7, 9, 10, 255
 };
 
 /* Where things on a square's floor go, by depth 1-3 (index 0 unused): the cell row, the centre
-** column and how far each square to the side is; and the rows a pit or teleporter covers. */
+** column and how far each square to the side is (where small creatures stand). */
 static const unsigned char floor_row[4] = { 16, 15, 12, 10 };
 static const unsigned char side_cols[4] = { 0, 12, 9, 6 };
-static const unsigned char half_cols[4] = { 0, 5, 4, 2 };
-static const unsigned char tele_top[4] = { 0, 2, 4, 5 };
-static const unsigned char air_row[4] = { 0, 8, 7, 6 };
 #define CENTRE 14
 
 static unsigned char sight;         /* how far ahead the party can see: the first wall, or 3 */
@@ -52,14 +58,14 @@ static unsigned char big_loaded = 255, small_loaded[MAXSMALL] = { 255, 255, 255 
 unsigned char creature_flash;
 
 /* Draws one of DMWAL's pieces, or the top quarters of it (a door part of the way open). */
-static void piece (unsigned char id, unsigned char quarters)
+static void piece (unsigned int id, unsigned char quarters)
 {
     static unsigned int w;
     static unsigned char n;
-    unsigned long at;
+    static unsigned long at;
 
-    far_wall (&w, 2 + 2 * id, 2);
-    at = (unsigned long) w * 2;
+    at = 0;
+    far_wall (&at, 2 + 3 * id, 3);
     far_wall (&n, at++, 1);
     n = (unsigned char) (n * quarters + 3) >> 2;
     while (n--) {
@@ -70,171 +76,249 @@ static void piece (unsigned char id, unsigned char quarters)
     }
 }
 
-/* An icon or letter (art.py) in cell (x, y), in a colour (255: the cell's own stays). */
-static void icon (unsigned char x, unsigned char y, unsigned char glyph, unsigned char colour)
+/* ---- objects: DM's own pictures (dmview.py's object_sprite), placed as DM places them ---- */
+
+/* DMWAL's tables for placing objects (dmview.py's object_tables): each set's places, each
+** aspect's set and flags, each object type's aspect. */
+#define OT_PLACES     0
+#define OT_ASPECT_SET 300
+#define OT_ASPECT     386
+#define AS_MIRROR     16        /* mirrored on the right */
+#define AS_ALCOVE     32        /* has a picture of its own for an alcove */
+#define CELL_ALCOVE   4
+static unsigned long obj_tables;
+
+/* How far objects in a pile shift from their place (ScummVM's G0217, G0223). */
+static const signed char shift_sets[3][8] = {
+    { 0, 1, 2, 3, 0, -3, -2, -1 }, { 0, 1, 1, 2, 0, -2, -1, -1 }, { 0, 1, 1, 1, 0, -1, -1, -1 }
+};
+static const unsigned char pile_shift[16] = {           /* x << 4 | y */
+    0x25, 0x06, 0x57, 0x30, 0x71, 0x12, 0x63, 0x33, 0x55, 0x26, 0x77, 0x10, 0x31, 0x62, 0x13, 0x53
+};
+static unsigned char pile;      /* the next object's shift */
+
+static void sprite (unsigned int id, int x, int top, unsigned char centred);
+
+/* A spell in flight in view square vsq (DM draws them half-way up, in the square's front
+** places). */
+static void projectile (unsigned char p, unsigned char vsq)
 {
-    if (x < VIEW_W && y < VIEW_H) {
-        bm_col = x;
-        bm_row = y;
-        bm_colour = colour;
-        stamp (glyph);
+    static const unsigned char kind[8] = { 0, 2, 1, 2, 2, 2, 3, 3 };
+    static unsigned char place[4];
+    int x;
+
+    far_wall (place, obj_tables + OT_PLACES + vsq * 10 + 4, 4);    /* set 0, places 2 and 3 */
+    x = !place[0] ? place[2] : !place[2] ? place[0] : (place[0] + place[2]) >> 1;
+    if (x) {
+        sprite (PIECE_PROJECTILE + kind[proj[p].type & 7] * 4 + vsq / 3, x, 47, 1);
     }
 }
 
-static void block (unsigned char x0, unsigned char y0, unsigned char x1, unsigned char y1,
-                   unsigned char glyph, unsigned char colour)
+/* Object t in view square vsq (D3C, D3L, D3R, D2C, D2L, D2R, D1C, D1L, D1R, D0C) at place cell
+** (0-3 as DM numbers them from the party's view, 4 an alcove). */
+static void object (unsigned int t, unsigned char vsq, unsigned char cell)
 {
-    unsigned char x;
+    static unsigned char place[2];
+    unsigned char oi = obj_info (t), aspect, info, size, variant = 0, lane = vsq % 3;
+    int x, top;
 
-    for (; y0 <= y1; ++y0) {
-        for (x = x0; x <= x1; ++x) {
-            icon (x, y0, glyph, colour);
+    if (oi >= 180) {
+        return;
+    }
+    far_wall (&aspect, obj_tables + OT_ASPECT + oi, 1);
+    far_wall (&info, obj_tables + OT_ASPECT_SET + aspect, 1);
+    far_wall (place, obj_tables + OT_PLACES + ((info & 15) * 10 + vsq) * 10 + cell * 2, 2);
+    if (!place[1]) {
+        return;                                 /* out of sight */
+    }
+    if (cell == CELL_ALCOVE && (info & AS_ALCOVE) && lane == 0) {
+        variant = 2;
+    } else if ((info & AS_MIRROR) && (lane == 2 || (lane == 0 && (cell == 1 || cell == 2)))) {
+        variant = 1;
+    }
+    /* As at depth 1 when near, smaller farther off. */
+    size = vsq == 9 || (vsq >= 6 && cell >= 2) ? 0 : vsq >= 6 || (vsq >= 3 && cell >= 2) ? 1 : 2;
+    x = place[0] + shift_sets[size][pile_shift[pile] >> 4];
+    top = place[1] + shift_sets[size][pile_shift[pile] & 15];
+    ++pile;
+    pile = cell == CELL_ALCOVE ? (pile >= 14 ? 2 : pile) : pile & 15;
+
+    sprite (PIECE_OBJ + (aspect * 3 + size) * 3 + variant, x, top, 0);
+}
+
+/* Draws one of DMWAL's object sprites (dmview.py's object_sprite) with the middle of its bottom
+** at (x, y) in DM's pixels, or if centred its middle at (x, y). */
+static void sprite (unsigned int id, int x, int top, unsigned char centred)
+{
+    static unsigned char hdr[3];
+    static unsigned long at;
+    unsigned char r, n, h;
+
+    at = 0;
+    far_wall (&at, 2 + 3 * id, 3);
+    far_wall (hdr, at, 3);                      /* width in double pixels, height, colour */
+    at += 3;
+    h = hdr[1];
+    top -= centred ? h >> 1 : h - 1;
+    x = (x - hdr[0] + 1) >> 1;                  /* the left edge, in double pixels */
+    n = ((hdr[0] + 3) >> 2) * 2;                /* bytes a row */
+    ob_shift = x & 3;
+    ob_colour = hdr[2];
+    for (r = 0; r < h; ++r, ++top, at += n) {
+        if (top < 0) {
+            continue;
+        }
+        if (top >= VIEW_H * 8) {
+            break;
+        }
+        far_wall (view_cols, at, n);
+        ob_col = x >> 2;
+        ob_cells = n >> 1;
+        ob_y = top;
+        object_row (view_cols);
+    }
+}
+
+/* The objects in each place of square (sx, sy), seen as view square vsq, far places first. */
+static void objects (unsigned char sx, unsigned char sy, unsigned char vsq)
+{
+    unsigned char c, abs;
+    unsigned int t;
+
+    for (c = 0; c < 4; ++c) {
+        abs = (c + pdir) & 3;
+        pile = (abs & 1) << 3;
+        for (t = first_thing (sx, sy); t != END; t = NEXT (t)) {
+            if (TH_CELL (t) == abs && TH_TYPE (t) >= T_WEAPON) {
+                object (t, vsq, c);
+            }
         }
     }
 }
 
-static unsigned char item_glyph (unsigned int t)
+/* The objects in an alcove on face `face` of wall square (x, y), seen as view square vsq. */
+static void alcove_objects (unsigned char x, unsigned char y, unsigned char face, unsigned char vsq)
 {
-    unsigned char oi = obj_info (t), f = obj_flags[oi];
+    unsigned int t;
 
-    switch (TH_TYPE (t)) {
-    case T_WEAPON:    return ICON_IT_WEAPON;
-    case T_ARMOUR:    return ICON_IT_ARMOUR;
-    case T_POTION:    return ICON_IT_POTION;
-    case T_SCROLL:    return ICON_IT_SCROLL;
-    case T_CONTAINER: return ICON_IT_CHEST;
+    pile = 2 + ((face & 1) << 3);
+    for (t = first_thing (x, y); t != END; t = NEXT (t)) {
+        if (TH_CELL (t) == face && TH_TYPE (t) >= T_WEAPON) {
+            object (t, vsq, CELL_ALCOVE);
+        }
     }
-    if (oi >= 136 && oi <= 151) return ICON_IT_KEY;
-    if (oi >= 133 && oi <= 135) return ICON_IT_COIN;
-    return (f & OBJ_MOUTH) ? ICON_IT_FOOD : ICON_IT_JUNK;
 }
 
-static unsigned char item_colour (unsigned int t)
-{
-    switch (TH_TYPE (t)) {
-    case T_WEAPON:  return COLOR_ORANGE;
-    case T_ARMOUR:  return COLOR_LIGHTBLUE;
-    case T_POTION:  return COLOR_LIGHTGREEN;
-    case T_SCROLL:  return COLOR_WHITE;
-    }
-    return COLOR_YELLOW;
-}
-
-static void item_icon (unsigned char x, unsigned char y, unsigned int t)
-{
-    icon (x, y, item_glyph (t), item_colour (t));
-}
-
-/* A character's glyph in the tiny font (art.py: characters 32-95). */
-static unsigned char font_glyph (unsigned char c)
-{
-    c &= 0x7F;
-    if (c >= 96) {
-        c -= 32;
-    }
-    return c < 32 ? 0 : c - 32;
-}
-
-/* Writing on the wall right ahead, in the tiny font, line by line as in Dungeon Master. */
+/* Writing on the wall right ahead, in DM's inscription font (dmview.py), centred, its lines at
+** the heights DM puts them (to the nearest cell). */
 static void wall_text (const char* s)
 {
-    unsigned char lines = 1, n, i, y;
+    static const unsigned char line_row[4] = { 5, 7, 9, 10 };
+    unsigned char line = 0, n, i, c;
     const char* p;
 
-    for (p = s; *p; ++p) {
-        lines += *p == '\n';
-    }
-    y = lines > 10 ? 2 : 7 - lines / 2;
-    bm_ink = 0x55;                  /* the dark grey, carved into the light stone */
-    while (*s && y < 14) {
+    while (*s && line < 4) {
         for (n = 0; s[n] && s[n] != '\n'; ++n) {
         }
         p = s + n;
-        if (n > 18) {
-            n = 18;
+        if (n > VIEW_W) {
+            n = VIEW_W;
         }
+        bm_row = line_row[line++];
         for (i = 0; i < n; ++i) {
-            icon (CENTRE - n / 2 + i, y, font_glyph (s[i]), 255);
+            /* The dungeon's texts are ASCII (and cc65 would make 'A' PETSCII). */
+            c = (s[i] & 0x7F) | 0x20;           /* lower case */
+            if (c >= 0x61 && c <= 0x7A) {
+                c -= 0x61;                      /* the letters come first */
+            } else if (c == 0x2E) {
+                c = 27;                         /* a full stop */
+            } else {
+                continue;                       /* a space, or one it doesn't have */
+            }
+            bm_col = CENTRE - n / 2 + i;
+            stamp_cell (c);
         }
         s = *p ? p + 1 : p;
-        ++y;
     }
-    bm_ink = 0xFF;
 }
 
-/* What's on the side of the wall ahead (depth k, 1 or 2) that faces the party. */
-static void ornament (signed char sx, signed char sy, unsigned char k)
-{
-    unsigned int t = first_thing (sx, sy), *r, item = NONE, text = NONE;
-    unsigned char cell = face_cell (), type, kind = 0, orn, y = k == 1 ? 7 : 6;
-    enum { K_NONE, K_BUTTON, K_KEYHOLE, K_TEXT, K_TORCH, K_ALCOVE, K_MIRROR };
+/* The place (dmview.py's 13) where each square's side and front faces are seen, if they are. */
+static const unsigned char vw_side[NSQUARES] = {
+    255, 255, 0, 1, 255, 5, 6, 255, 10, 11, 255, 255, 255, 255
+};
+static const unsigned char vw_front[NSQUARES] = {
+    255, 255, 2, 4, 3, 7, 9, 8, 255, 255, 12, 255, 255, 255
+};
+#define VW_D1C 12
+static const unsigned char vw_vsq[13] = {               /* fronts: their view square */
+    255, 255, 1, 0, 2, 255, 255, 4, 3, 5, 255, 255, 6
+};
 
-    for (; t != END; t = NEXT (t)) {
-        if (TH_CELL (t) != cell) {
-            continue;
-        }
-        r = thing_ptr (t);
-        type = TH_TYPE (t);
-        if (type == T_SENSOR) {
-            orn = SENS_ORNAMENT (r);
-            if (orn && wall_ornaments[lev][orn - 1] <= 3 && wall_ornaments[lev][orn - 1] >= 1) {
-                kind = K_ALCOVE;
+/* The ornament on side `face` of wall square (x, y), by DM's rule: walls that allow it get one
+** of the level's first few ornaments at random (always the same for that side), unless a sensor
+** or writing on that side says otherwise. Returns the ornament's number in DM's 60 (alcoves,
+** switches, locks...), or 255 for none; writing is DM's ornament 0, the unreadable inscription.
+** It notes the writing and a mirror's champion. */
+static unsigned int orn_text;
+static unsigned char orn_champion;
+
+static unsigned char wall_orn (unsigned char x, unsigned char y, unsigned char face, unsigned char s)
+{
+    unsigned char ord = 0, n = levels[lev].orns, type, fake = SQ_TYPE (s) == E_FAKE;
+    unsigned int r, t, *p;
+
+    if (s & (fake ? 8 : 8 >> face)) {
+        r = (((((x * 32 + 2000 + (y + 1) * (face + 1)) * 31417u) >> 1) +
+              (3000 + lev * 64 + lw + lh) * 11 + ORN_SEED) >> 2) % 30;
+        if (r < (n >> 4)) {
+            ord = r + 1;
+            if (fake && WALL_ORN (r) >= 1 && WALL_ORN (r) <= 3) {
+                ord = 0;                        /* no alcoves in fake walls */
             }
-            switch (SENS_TYPE (r)) {
-            case 127: kind = K_MIRROR; break;
-            case 1: if (!kind) kind = K_BUTTON; break;
-            case 2: case 3: case 4: case 12: case 16: if (!kind) kind = K_KEYHOLE; break;
-            case 13: if (!kind) kind = K_TORCH; break;
-            }
-        } else if (type == T_TEXT && (r[1] & 1)) {
-            if (!kind) kind = K_TEXT;
-            text = r[1] >> 3;
-        } else if (type >= T_WEAPON && item == NONE) {
-            item = t;
-            if (!kind) kind = K_TORCH;
         }
     }
-    switch (kind) {
-    case K_ALCOVE:
-        if (k == 1) {
-            block (11, 7, 16, 9, ICON_SOLID, COLOR_BLACK);
-        } else {
-            block (12, 6, 15, 7, ICON_SOLID, COLOR_BLACK);
+    orn_champion = 0;
+    for (t = first_thing (x, y); t != END; t = NEXT (t)) {
+        if (TH_CELL (t) != face) {
+            continue;
         }
-        if (item != NONE) {
-            item_icon (CENTRE, k == 1 ? 9 : 7, item);
+        p = thing_ptr (t);
+        type = TH_TYPE (t);
+        if (type == T_TEXT && (p[1] & 1)) {
+            ord = 255;
+            orn_text = p[1] >> 3;
+        } else if (type == T_SENSOR) {
+            ord = SENS_ORNAMENT (p);
+            if (SENS_TYPE (p) == 127) {
+                orn_champion = (unsigned char) SENS_DATA (p) + 1;
+            }
         }
-        break;
-    case K_MIRROR:
-        if (k == 1) {
-            block (10, 3, 17, 10, ICON_SOLID, COLOR_LIGHTBLUE);
-            block (11, 4, 16, 9, ICON_SOLID, COLOR_BLACK);
-            icon (13, 6, ICON_FACE, COLOR_LIGHTRED);
-            icon (14, 6, ICON_FACE, COLOR_LIGHTRED);
-        } else {
-            icon (CENTRE, y, ICON_FACE, COLOR_LIGHTBLUE);
-        }
-        break;
-    case K_BUTTON:
-        icon (CENTRE, y, ICON_BUTTON, COLOR_YELLOW);
-        break;
-    case K_KEYHOLE:
-        icon (CENTRE, y, ICON_KEYHOLE, COLOR_YELLOW);
-        break;
-    case K_TEXT:
-        if (k == 1) {
-            wall_text (text_decode (text));
-        } else {
-            icon (CENTRE, y, ICON_TEXT, COLOR_WHITE);
-        }
-        break;
-    case K_TORCH:
-        if (item == NONE) {
-            icon (CENTRE, y, ICON_TORCH, COLOR_BROWN);
-        } else {
-            item_icon (CENTRE, y, item);
-        }
-        break;
+    }
+    if (ord == 255) {
+        return 0;
+    }
+    return ord && ord <= (n & 15) ? WALL_ORN (ord - 1) : 255;
+}
+
+/* Draws what's on one face of a wall square, at place vw. */
+static void ornament (unsigned char x, unsigned char y, unsigned char face, unsigned char vw,
+                      unsigned char s)
+{
+    unsigned char orn = wall_orn (x, y, face, s);
+
+    if (orn == 255) {
+        return;
+    }
+    if (vw == VW_D1C && orn == 0) {
+        wall_text (text_decode (orn_text));
+        return;
+    }
+    piece (PIECE_ORN + orn * 13 + vw, 4);
+    if (vw == VW_D1C && orn_champion) {
+        piece (PIECE_PORTRAIT + orn_champion - 1, 4);
+    }
+    if (orn >= 1 && orn <= 3 && vw_vsq[vw] != 255) {
+        alcove_objects (x, y, face, vw_vsq[vw]);
     }
 }
 
@@ -266,10 +350,66 @@ static unsigned char in_sight (unsigned char k, signed char l)
     return 1;
 }
 
+/* The floor ornament of floor square (x, y) (grates, pressure pads, moss...), by DM's rule:
+** corridors that allow it get one of the level's first few at random, unless a sensor there
+** says otherwise. Returns its number in DM's floor ornaments, or 255. */
+static unsigned char floor_orn (unsigned char x, unsigned char y, unsigned char s)
+{
+    unsigned char ord = 0, n = levels[lev].floor_orns;
+    unsigned int r, t;
+
+    if (SQ_TYPE (s) == E_FLOOR && (s & 8)) {
+        r = (((((x * 32 + 2000 + y) * 31417u) >> 1) +
+              (3000 + lev * 64 + lw + lh) * 11 + ORN_SEED) >> 2) % 30;
+        if (r < (n >> 4)) {
+            ord = r + 1;
+        }
+    }
+    for (t = first_thing (x, y); t != END; t = NEXT (t)) {
+        if (TH_TYPE (t) == T_SENSOR) {
+            ord = SENS_ORNAMENT (thing_ptr (t));
+        }
+    }
+    return ord && ord <= (n & 15) ? FLOOR_ORN (ord - 1) : 255;
+}
+
+/* A teleporter's sparkling field, drawn over what's in the square. */
+static void field (unsigned char s, unsigned char pos)
+{
+    if (SQ_TYPE (s) == E_TELE && (s & (TELE_OPEN | TELE_VISIBLE)) == (TELE_OPEN | TELE_VISIBLE) &&
+        pos != 255) {
+        piece (PIECE_FIELD + pos, 4);
+    }
+}
+
+/* Which of DMWAL's doors a door is (dmconv.py's door_kinds): its level's door set for its type,
+** and its ornament, or the broken door. DOOR_KINDS if none is. */
+static unsigned char door_kind (unsigned int* r, unsigned char broken)
+{
+    unsigned char set = levels[lev].doors, orn = DOOR_ORN_NONE, kind, i;
+
+    if (r) {
+        if (r[1] & 1) {
+            set >>= 4;
+        }
+        i = (r[1] >> 1) & 15;
+        if (i) {
+            orn = DOOR_ORN (i - 1);
+        }
+    }
+    if (broken) {
+        orn = DOOR_ORN_BROKEN;
+    }
+    kind = (set & 15) | orn << 4;
+    for (i = 0; i < DOOR_KINDS && door_kinds[i] != kind; ++i) {
+    }
+    return i;
+}
+
 static void square (unsigned char i)
 {
     signed char k = sq_k[i], l = sq_l[i], sx, sy, a;
-    unsigned char s, type, state, x, y, n;
+    unsigned char s, type, state, x, y, n, pos = sq_pos[i];
     unsigned int t, *r;
 
     sx = px + k * dir_dx[pdir] + l * dir_dx[(pdir + 1) & 3];
@@ -283,9 +423,12 @@ static void square (unsigned char i)
     if (is_wall (s)) {
         if (i < 13) {
             piece (PIECE_WALL + i, 4);
-        }
-        if (!l && (k == 1 || k == 2)) {
-            ornament (sx, sy, k);
+            if (vw_side[i] != 255) {
+                ornament (sx, sy, (pdir + (l < 0 ? 1 : 3)) & 3, vw_side[i], s);
+            }
+            if (vw_front[i] != 255) {
+                ornament (sx, sy, (pdir + 2) & 3, vw_front[i], s);
+            }
         }
         return;
     }
@@ -302,16 +445,16 @@ static void square (unsigned char i)
         for (t = first_thing (sx, sy); t != END && TH_TYPE (t) != T_DOOR; t = NEXT (t)) {
         }
         r = t == END ? 0 : thing_ptr (t);
-        if (state && state < 5 && sq_frame[i] < 9) {
-            /* Shut, or part of the way: the top of the door shows. */
-            n = levels[lev].doors;
-            if (r && (r[1] & 1)) {
-                n >>= 4;
+        if (state && sq_frame[i] < 9) {
+            /* Shut, or part of the way: the top of the door shows. Bashed down, it shows
+            ** broken. */
+            n = door_kind (r, state == 5);
+            if (n < DOOR_KINDS) {
+                piece (PIECE_DOOR + n * 9 + sq_frame[i], state == 5 ? 4 : state);
             }
-            piece (PIECE_DOOR + (n & 15) * 9 + sq_frame[i], state);
         }
-        if (r && (r[1] & 0x40) && !l) {
-            icon (CENTRE + 7 - k * 2, y - 4 - k, ICON_BUTTON, COLOR_YELLOW);
+        if (r && (r[1] & 0x40) && door_button[i] != 255) {
+            piece (PIECE_DOOR_BUTTON + door_button[i], 4);
         }
         break;
     case E_STAIRS:
@@ -320,29 +463,34 @@ static void square (unsigned char i)
         }
         break;
     case E_PIT:
-        if ((s & (PIT_OPEN | PIT_INVISIBLE)) == PIT_OPEN && l > -2 && l < 2) {
-            block (x - half_cols[k], y - 1, x + half_cols[k] - 1, y, ICON_SOLID, COLOR_BLACK);
+        if ((s & PIT_OPEN) && pos != 255) {
+            if (!(s & PIT_INVISIBLE)) {
+                piece (PIECE_PIT + pos, 4);
+            } else if (pos >= 3) {
+                piece (PIECE_PIT + 12 + pos, 4);    /* only seen from nearer */
+            }
         }
-        break;
+        /* fall through */
+    case E_FLOOR:
     case E_TELE:
-        if ((s & (TELE_OPEN | TELE_VISIBLE)) == (TELE_OPEN | TELE_VISIBLE) && l > -2 && l < 2) {
-            block (x - half_cols[k], tele_top[k], x + half_cols[k] - 1, y, ICON_TELE,
-                   COLOR_LIGHTBLUE);
+    case E_FAKE:
+        if (pos < 9) {
+            n = floor_orn (sx, sy, s);
+            if (n < 9) {
+                piece (PIECE_FLOOR_ORN + n * 9 + pos, 4);
+            }
         }
         break;
     }
+    if (sq_vsq[i] != 255) {
+        objects (sx, sy, sq_vsq[i]);
+    }
     if (k == 0 || l < -1 || l > 1) {
+        field (s, pos);
         return;
     }
 
-    /* Objects lie on the floor half-way into the square; creatures stand there. */
-    n = 0;
-    for (t = first_thing (sx, sy); t != END && n < 2; t = NEXT (t)) {
-        if (TH_TYPE (t) >= T_WEAPON) {
-            item_icon (x - n, y, t);
-            ++n;
-        }
-    }
+    /* Creatures stand half-way into the square. */
     a = creature_at (sx, sy);
     if (a >= 0 && in_sight (k, l)) {
         type = th_creature[TH_INDEX (active[a].thing)][2] >> 8;
@@ -356,9 +504,10 @@ static void square (unsigned char i)
         }
     }
     a = projectile_at (sx, sy);
-    if (a >= 0) {
-        icon (x, air_row[k], ICON_BALL, projectile_colour (a));
+    if (a >= 0 && sq_vsq[i] != 255) {
+        projectile (a, sq_vsq[i]);
     }
+    field (s, pos);
 }
 
 /* Sprite pointers and colours: the screen's own (the bitmap's colours share its memory). */
@@ -478,6 +627,9 @@ void view_draw (void)
         if (is_wall (s) || (SQ_TYPE (s) == E_DOOR && (s & DOOR_STATE) && (s & DOOR_STATE) < 5)) {
             break;
         }
+    }
+    if (!obj_tables) {
+        far_wall (&obj_tables, 2 + 3 * PIECE_OBJ_TABLES, 3);
     }
     piece (PIECE_BASE, 4);
     for (i = 0; i < NSQUARES; ++i) {

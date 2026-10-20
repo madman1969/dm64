@@ -149,7 +149,7 @@ def pointer_bytes():
 # Its pixels are double-wide, 4 to a character cell, each one of four colours: 0 the background,
 # 1 and 2 the two greys every cell shares, 3 the cell's own colour (see view.c).
 
-# A 3x5 font for writing in the bitmap: on walls (view.c) and the panel's buttons (below).
+# A 3x5 font for the panel's buttons (below).
 TINY = {
     ' ': '... ... ... ... ...', '!': '.#. .#. .#. ... .#.', '"': '#.# #.# ... ... ...',
     "'": '.#. .#. ... ... ...', '(': '..# .#. .#. .#. ..#', ')': '#.. .#. .#. .#. #..',
@@ -175,44 +175,6 @@ def tiny_rows(ch):
     """A character of the tiny font as 8 rows of 4 pixels (on rows 1-5)."""
     rows = TINY.get(ch, TINY['?']).split()
     return ['....'] + [r + '.' for r in rows] + ['....'] * 2
-
-
-def cell_mask(rows):
-    """8 rows of 4 pixels ('#' set) as a cell's 8 bytes, each pixel's two bits set."""
-    out = bytearray()
-    for r in rows:
-        b = 0
-        for i, c in enumerate(r):
-            if c != '.':
-                b |= 3 << (6 - 2 * i)
-        out.append(b)
-    return bytes(out)
-
-
-# Small pictures drawn over the view (view.c), in the cell's own colour: the character glyphs
-# above, their pixels paired.
-ICONS = ['BUTTON', 'KEYHOLE', 'TEXT', 'TORCH', 'FACE', 'IT_WEAPON', 'IT_ARMOUR', 'IT_POTION',
-         'IT_SCROLL', 'IT_JUNK', 'IT_FOOD', 'IT_KEY', 'IT_CHEST', 'IT_COIN', 'BALL', 'TELE',
-         'SOLID']
-
-
-def icon_rows(name):
-    rows = dict(GLYPHS)[name]
-    return [''.join('#' if '#' in r[i:i + 2] else '.' for i in range(0, 8, 2)) for r in rows]
-
-
-def bitmap_glyph_bytes():
-    """The tiny font (characters 32-95), then the icons: 8 bytes of mask each."""
-    out = bytearray()
-    for c in range(32, 96):
-        out += cell_mask(tiny_rows(chr(c)))
-    for name in ICONS:
-        out += cell_mask(icon_rows(name))
-    return bytes(out)
-
-
-def icon_defines():
-    return ['#define ICON_%s %d' % (name, 64 + i) for i, name in enumerate(ICONS)]
 
 
 # The panel right of the view: cells 28-39 of rows 0-16, buttons and the movement pad, drawn

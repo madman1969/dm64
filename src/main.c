@@ -72,7 +72,7 @@ int main (void)
     }
     if (!dungeon_init ()) {
         say ("THIS GAME NEEDS A RAM EXPANSION:");
-        say ("AN REU (256K OR MORE) OR A SUPERCPU.");
+        say ("AN REU (512K OR MORE) OR A SUPERCPU.");
         return 1;
     }
     hw_init ();

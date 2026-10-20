@@ -212,6 +212,5 @@ void ovl_cast (void)
     redraw |= REDRAW_PANEL;
 }
 
-#pragma data-name (pop)
-#pragma rodata-name (pop)
-#pragma code-name (pop)
+/* No pops here: cc65 writes string literals at the end of the file, into the segments then
+** in force, and they belong in the overlay. */

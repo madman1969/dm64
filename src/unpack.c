@@ -1,6 +1,6 @@
 /*
 ** unpack.c - unpacks a data file packed by tools/dmview.py (lz_pack) into far memory as it loads:
-** DMWAL, the view's pieces, which wouldn't fit on the disk otherwise. In overlay 2, with casting,
+** DMWAL, the view's pieces, which wouldn't fit on the disk otherwise. In overlay 4, its own,
 ** as it's only needed once, while the game starts.
 **
 ** A byte below $80 is followed by that many plus one bytes to copy; otherwise its bits 2-6 plus
@@ -12,10 +12,10 @@
 #include "dm.h"
 #include "farmem.h"
 
-#pragma code-name (push, "OVL3")
-#pragma rodata-name (push, "OVL3")
-#pragma data-name (push, "OVL3")
-#pragma bss-name (push, "OVL3")
+#pragma code-name (push, "OVL5")
+#pragma rodata-name (push, "OVL5")
+#pragma data-name (push, "OVL5")
+#pragma bss-name (push, "OVL5")
 
 #define RING 1024
 

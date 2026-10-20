@@ -188,7 +188,7 @@ void ovl_map (void)
     if (py >= top && py < top + VIEW_H) {
         ui_glyph (left + px, py - top, party_glyph[pdir], COLOR_YELLOW);
     }
-    msg ("THE MAP: YOU ARE THE YELLOW ARROW");
+    msg ("THE MAP: YOU ARE THE ARROW");
     msg ("ANY KEY OR CLICK: BACK TO THE DUNGEON");
     zones_clear ();
     zone (0, 0, 40, 25, ' ');
@@ -212,6 +212,5 @@ void ovl_help (void)
     redraw = REDRAW_VIEW | REDRAW_PANEL;
 }
 
-#pragma data-name (pop)
-#pragma rodata-name (pop)
-#pragma code-name (pop)
+/* No pops here: cc65 writes string literals at the end of the file, into the segments then
+** in force, and they belong in the overlay. */

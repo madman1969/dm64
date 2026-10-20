@@ -447,7 +447,7 @@ static unsigned char is_alcove (void)
         if (TH_CELL (t) == face_cell () && TH_TYPE (t) == T_SENSOR) {
             r = thing_ptr (t);
             orn = SENS_ORNAMENT (r);
-            if (orn && wall_ornaments[lev][orn - 1] >= 1 && wall_ornaments[lev][orn - 1] <= 3) {
+            if (orn && WALL_ORN (orn - 1) >= 1 && WALL_ORN (orn - 1) <= 3) {
                 return 1;
             }
         }

@@ -4,8 +4,9 @@
 **
 **   overlay 0  recruit.c   champions from the mirrors
 **   overlay 1  screens.c   the inventory, help and the map
-**   overlay 2  cast.c      casting spells; unpack.c, DMWAL as the game starts
+**   overlay 2  cast.c      casting spells
 **   overlay 3  save.c      saving and loading
+**   overlay 4  unpack.c    unpacking DMWAL as the game starts
 **
 ** An overlay may call anything here in ordinary memory, but nothing in another overlay. The
 ** screens that cover the view switch the whole screen to text while they're up.

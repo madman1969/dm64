@@ -29,6 +29,7 @@ static unsigned char level_buf[LEVEL_MAX];
 static farptr level_far[NLEVELS];
 
 unsigned char lev = 255, lw, lh;
+unsigned char level_orns[48];       /* the party's level's wall, floor and door ornaments */
 unsigned int levels_visited;        /* a bit for each level the party has been on */
 unsigned char px, py, pdir;
 const signed char dir_dx[4] = { 0, 1, 0, -1 };
@@ -50,7 +51,7 @@ unsigned int pool[POOL_SIZE][2];
 ** ordinary memory and kept in far memory, each copied in when it's called. The linker's config
 ** (c64-dm64.cfg) defines the area; the build puts them in the DMOVL file, each padded to its
 ** size. */
-#define NOVERLAYS 4
+#define NOVERLAYS 5
 extern unsigned char _OVL1_START__[], _OVL1_SIZE__[];
 #define OVL_START ((void*) _OVL1_START__)
 #define OVL_SIZE ((unsigned int) _OVL1_SIZE__)
@@ -115,7 +116,7 @@ unsigned char dungeon_init (void)
     if (!wall_far) {
         return 0;
     }
-    overlay (2);
+    overlay (4);
     return ovl_unpack ("dmwal", wall_far, WAL_TOTAL, level_buf);
 }
 
@@ -184,6 +185,13 @@ void level_enter (unsigned char l)
     th_sensor = (void*) (level_buf + IMG->off_table[3]);
     th_creature = (void*) (level_buf + IMG->off_table[4]);
     th_obj = (void*) (level_buf + IMG->off_table[5]);
+    {
+        static unsigned long at;
+
+        at = 0;
+        far_wall (&at, 2 + 3 * PIECE_OBJ_TABLES, 3);
+        far_wall (level_orns, at + OT_LEVEL_ORNS + l * 48, 48);
+    }
 }
 
 unsigned char* sq_ptr (unsigned char x, unsigned char y)

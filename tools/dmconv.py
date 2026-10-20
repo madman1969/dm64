@@ -57,8 +57,8 @@ ITEM_TYPES = range(5, 11)
 HI_GLYPHS = 0xD000 + art.FIRST_GLYPH * 8
 HI_SPRITES = 0xD400         # creature sprites, copied in from far memory
 HI_POINTER = 0xD6C0         # the mouse pointer's sprite
-HI_BMGLYPHS = 0xD800        # the bitmap view's font and icons (art.py), in the RAM under I/O
 HI_BITMAP = 0xE000          # the bitmap view, in the RAM under the KERNAL
+HI_INSCRIPTION = 0xDC00     # DM's inscription font as bitmap cells (dmview.py), under I/O
 
 # Food value of each junk type (by junk subtype); anything not listed isn't food.
 FOOD = {29: 30, 30: 30, 31: 40, 32: 45, 33: 50, 34: 50, 35: 60, 36: 110}
@@ -189,12 +189,26 @@ def main():
     raw = D.raw
     mapsize = struct.unpack_from('>H', raw, 2)[0]
     mstart = len(raw) - mapsize
-    images, wallorn = [], []
+    images, wallorn, floororn, door_kinds, level_orns = [], [], [], set(), []
     for m in D.maps:
         images.append(level_image(D, m))
-        nwall, ncr = m.orn & 15, (m.misc >> 4) & 15
-        p = mstart + m.offset + m.w * m.h
-        wallorn.append((list(raw[p + ncr:p + ncr + nwall]) + [0] * 16)[:16])
+        nwall, nfloor, ncr, ndoor = m.orn & 15, (m.orn >> 8) & 15, (m.misc >> 4) & 15, m.misc & 15
+        p = mstart + m.offset + m.w * m.h + ncr     # after the squares and creature types
+        wallorn.append((list(raw[p:p + nwall]) + [0] * 16)[:16])
+        floororn.append((list(raw[p + nwall:p + nwall + nfloor]) + [0] * 16)[:16])
+        doororn = list(raw[p + nwall + nfloor:p + nwall + nfloor + ndoor])
+        level_orns.append(bytes(wallorn[-1] + floororn[-1] + (doororn + [0] * 16)[:16]))
+        # The doors it has: their door set, and ornament (its own list's, as DM's number).
+        for lst in m.lists.values():
+            for _, kind, index in lst:
+                if kind == 0:
+                    a = D.things[0][index][1]
+                    orn = (a >> 1) & 15
+                    door_kinds.add(((m.sets >> (8 + 4 * (a & 1))) & 15,
+                                    doororn[orn - 1] if orn else dmview.DOOR_ORN_NONE))
+    for door_set in {k[0] for k in door_kinds}:
+        door_kinds.add((door_set, dmview.DOOR_ORN_BROKEN))
+    door_kinds = sorted(door_kinds)
     level_max = max(len(i) for i in images)
     sprites, sprite_colours = dmimg.creature_sprites(G)
 
@@ -211,7 +225,6 @@ def main():
     h.append('#define SPRITE_SET 320          /* bytes of sprites per creature in DMSPR */')
     h.append('#define SPRITES_TOTAL %dUL' % len(sprites))
     h.append('#define HI_POINTER 0x%04X' % HI_POINTER)
-    h.append('#define HI_BMGLYPHS 0x%04X     /* font and icons for the bitmap */' % HI_BMGLYPHS)
     h.append('#define NHELP %d' % len(text.HELP))
     h.append('''
 typedef struct {
@@ -220,10 +233,13 @@ typedef struct {
     unsigned char depth;        /* the level's depth (0 = the Hall of Champions) */
     unsigned char difficulty;
     unsigned char doors;        /* its two door sets (DMWAL's), the second in bits 4-7 */
+    unsigned char orns;         /* its wall ornaments: how many, and in bits 4-7 how many of
+                                ** them (the first) are put on walls at random */
+    unsigned char floor_orns;   /* the same for its floor ornaments */
 } level_t;
 
 extern const level_t levels[NLEVELS];
-extern const unsigned char wall_ornaments[NLEVELS][16];
+extern const unsigned char door_kinds[];        /* DOOR_KINDS of them: see view.c */
 extern const unsigned int level_size[NLEVELS];
 
 extern const unsigned int name_offset[NNAMES];
@@ -268,13 +284,13 @@ extern const unsigned char mana_multiplier[6];  /* in eighths, by power */
     c.append('#include "dmdata.h"\n')
     c.append('const level_t levels[NLEVELS] = {')
     for m in D.maps:
-        c.append('    { %d, %d, %d, %d, %d, %d, 0x%02X },' % (m.w, m.h, m.ox, m.oy, m.level,
-                                                            (m.misc >> 12) & 15, m.sets >> 8))
+        c.append('    { %d, %d, %d, %d, %d, %d, 0x%02X, 0x%02X, 0x%02X },' % (
+            m.w, m.h, m.ox, m.oy, m.level, (m.misc >> 12) & 15, m.sets >> 8, m.orn & 0xFF,
+            m.orn >> 8))
     c.append('};\n')
-    c.append('const unsigned char wall_ornaments[NLEVELS][16] = {')
-    for wl in wallorn:
-        c.append('    { %s },' % ', '.join(map(str, wl)))
-    c.append('};\n')
+
+    c.append(carray('door_kinds', 'unsigned char', [st | orn << 4 for st, orn in door_kinds]))
+
     c.append(carray('level_size', 'unsigned int', [len(i) for i in images]))
 
     # DMTXT, kept in far memory: the dungeon's texts, then object names, then our own strings.
@@ -316,7 +332,11 @@ extern const unsigned char mana_multiplier[6];  /* in eighths, by power */
     txt = textdata + bytes(blob) + bytes(strings)
     h.insert(-1, '#define TXT_TOTAL %dUL       /* DMTXT: texts, names, strings */\n' % len(txt))
 
-    walls = dmview.build_pieces(G)
+    # The wall ornaments some level uses (0, the unreadable inscription, stands for any writing).
+    used_orns = {0}
+    for m, wl in zip(D.maps, wallorn):
+        used_orns.update(wl[:m.orn & 15])
+    walls = dmview.build_pieces(G, used_orns, door_kinds, T['objinfo'], b''.join(level_orns))
     walls_packed = dmview.lz_pack(walls)
     assert dmview.lz_unpack(walls_packed, len(walls)) == walls
     h.insert(-1, '\n'.join([
@@ -326,7 +346,21 @@ extern const unsigned char mana_multiplier[6];  /* in eighths, by power */
         '#define PIECE_DOOR_FRAME %d' % dmview.PIECE_DOOR_FRAME,
         '#define PIECE_DOOR %d' % dmview.PIECE_DOOR,
         '#define PIECE_STAIRS %d' % dmview.PIECE_STAIRS,
-        '#define PIECES %d' % dmview.PIECES,
+        '#define PIECE_ORN %d       /* + ornament * 13 + place (view.c) */' % dmview.PIECE_ORN,
+        '#define PIECE_PORTRAIT %d' % dmview.PIECE_PORTRAIT,
+        '#define PIECE_PIT %d       /* + place, + 12 if invisible */' % dmview.PIECE_PIT,
+        '#define PIECE_FIELD %d' % dmview.PIECE_FIELD,
+        '#define PIECE_FLOOR_ORN %d /* + ornament * 9 + place */' % dmview.PIECE_FLOOR_ORN,
+        '#define ORN_SEED %d        /* DUNGEON.DAT\'s seed for ornaments put at random */' % D.seed,
+        '#define PIECE_DOOR_BUTTON %d' % dmview.PIECE_DOOR_BUTTON,
+        '#define PIECE_OBJ %d       /* + (aspect * 3 + size) * 3 + variant */' % dmview.PIECE_OBJ,
+        '#define PIECE_PROJECTILE %d /* + kind * 4 + depth (3 to 0) */' % dmview.PIECE_PROJECTILE,
+        '#define PIECE_OBJ_TABLES %d /* then each level\'s ornaments (dungeon.c) */' % dmview.PIECE_OBJ_TABLES,
+        '#define OT_LEVEL_ORNS %d' % len(dmview.object_tables(T['objinfo'])),
+        '#define PIECES %d' % (dmview.PIECE_DOOR + len(door_kinds) * 9),
+        '#define DOOR_KINDS %d        /* door_kinds: door set | ornament << 4 */' % len(door_kinds),
+        '#define DOOR_ORN_NONE %d' % dmview.DOOR_ORN_NONE,
+        '#define DOOR_ORN_BROKEN %d' % dmview.DOOR_ORN_BROKEN,
         '#define DOOR_SETS %d' % dmview.DOOR_SETS, '']))
     c.append(carray('creature_name_at', 'unsigned int', at[:27], 9))
     c.append(carray('help_line_at', 'unsigned int', at[27:], 9))
@@ -338,7 +372,7 @@ extern const unsigned char mana_multiplier[6];  /* in eighths, by power */
     with open(os.path.join(gendir, 'glyphs.h'), 'w') as f:
         f.write('/* Generated by tools/dmconv.py from tools/art.py: do not edit. */\n')
         f.write('#ifndef GLYPHS_H\n#define GLYPHS_H\n%s\n#endif\n' % '\n'.join(
-            art.glyph_defines() + art.icon_defines()))
+            art.glyph_defines()))
 
     # DMSPR: each creature's sprites (dmimg.py), kept in far memory.
     with open(os.path.join(bindir, 'dmspr.bin'), 'wb') as f:
@@ -359,8 +393,7 @@ extern const unsigned char mana_multiplier[6];  /* in eighths, by power */
     assert HI_GLYPHS + len(art.glyph_bytes()) <= 0xD400, 'too many glyphs for 128 characters'
     hi = bytearray()
     chunks = [(HI_GLYPHS, art.glyph_bytes()), (HI_POINTER, art.pointer_bytes()),
-              (HI_BMGLYPHS, art.bitmap_glyph_bytes())]
-    assert HI_BMGLYPHS + len(art.bitmap_glyph_bytes()) <= 0xDC00
+              (HI_INSCRIPTION, dmview.inscription_cells(G))]
     # The panel beside the view, drawn into the bitmap once.
     for row, data in art.panel_cells().items():
         chunks.append((HI_BITMAP + row * 320 + 28 * 8, data))

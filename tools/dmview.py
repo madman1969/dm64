@@ -235,8 +235,8 @@ def to_c64(view, pal):
 # Pieces, in order: 0 the base (ceiling and floor); 1-13 walls (ORDER); 14-23 door frames
 # (DF_KEYS); 24-59 shut doors (door set * 9 + DP_KEYS); 60-81 stairs (up then down, ST_KEYS).
 #
-# DMWAL: a word, the number of pieces; a word per piece, its offset in DMWAL in words; then each
-# piece (padded to an even length):
+# DMWAL: a word, the number of pieces; three bytes per piece, its offset in DMWAL; then each
+# piece:
 # a byte, its number of rows of cells, then each row: a word, the row's length after it; the
 # cell row (0-16), the first cell's column (0-27), the number of cells; then each cell: a flag
 # byte (bit 0 drawn, bit 1 only partly covered, bit 2 uses colour 3, bits 4-7 that colour),
@@ -318,8 +318,10 @@ def piece_bytes(canvas):
     return bytes([len(rows)]) + b''.join(rows)
 
 
-def build_pieces(G):
-    """All the view's pieces, in the game's order (see view.c), as DMWAL."""
+def build_pieces(G, used_orns=None, door_kinds=(), objinfo=(), level_orns=b''):
+    """All the view's pieces, in the game's order (see view.c), as DMWAL. used_orns: the wall
+    ornaments any level uses (the others are left empty); door_kinds: the doors it has, as
+    (door set, ornament) pairs (DOOR_KIND_ below)."""
     pieces = []
     base = [0] * (VIEW_W * VIEW_H)
     for item, top in ((CEILING, 0), (FLOOR, VIEW_H - 70)):
@@ -332,33 +334,483 @@ def build_pieces(G):
         pieces.append(piece_bytes(piece_canvas(G, [(item, x1, x2, y1, y2, sx, sy, key == (3, -2))])))
     for key in DF_KEYS:
         pieces.append(piece_bytes(piece_canvas(G, DOOR_FRAMES[key])))
-    # Doors only shut: a part-open door is drawn as the top rows of the shut one (view.c).
-    for door_set in range(DOOR_SETS):
-        for key in DP_KEYS:
-            depth, slices = DOOR_PANELS[key]
-            x1, x2, y1, y2, sx, sy = slices[0]
-            item = FIRST_DOOR_SET + door_set * 3 + depth
-            pieces.append(piece_bytes(piece_canvas(G, [(item, x1, x2, y1, y2, sx, sy, False)])))
     for way in ('up', 'down'):
         for key in ST_KEYS:
             item, x1, x2, y1, y2, sx, mirror = STAIRS_FRONT[way][key]
             pieces.append(piece_bytes(piece_canvas(G, [(item, x1, x2, y1, y2, sx, 0, mirror)])))
-    # Offsets are in words (each piece padded to an even length), so DMWAL can pass 64K.
-    pieces = [p + b'\0' if len(p) & 1 else p for p in pieces]
-    offset = 2 + 2 * len(pieces)
+    assert len(pieces) == PIECE_ORN
+    used = set(range(WALL_ORNS)) if used_orns is None else set(used_orns)
+    for orn in range(WALL_ORNS):
+        for vw in range(13):
+            pieces.append(piece_bytes(ornament_canvas(G, orn, vw)) if orn in used else b'\0')
+    portraits = dmimg.decode(G.item(PORTRAITS))
+    for champion in range(PORTRAIT_COUNT):
+        pieces.append(piece_bytes(portrait_canvas(portraits, champion)))
+    assert len(pieces) == PIECE_PIT
+    for invisible in (False, True):
+        for pos in range(12):
+            visible = not invisible or pos in INVISIBLE_PIT
+            pieces.append(piece_bytes(pit_canvas(G, pos, invisible)) if visible else b'\0')
+    for pos in range(12):
+        pieces.append(piece_bytes(field_canvas(G, pos)))
+    for orn in range(FLOOR_ORNS):
+        for pos in range(9):
+            pieces.append(piece_bytes(floor_orn_canvas(G, orn, pos)))
+    for pos in range(4):
+        pieces.append(piece_bytes(door_button_canvas(G, pos)))
+    assert len(pieces) == PIECE_OBJ
+    pieces += object_pieces(G)
+    pieces.append(object_tables(objinfo) + level_orns)
+    pieces += projectile_pieces(G)
+    assert len(pieces) == PIECE_DOOR
+    # Doors only shut: a part-open door is drawn as the top rows of the shut one (view.c).
+    for door_set, orn in door_kinds:
+        for key in DP_KEYS:
+            pieces.append(piece_bytes(door_canvas(G, door_set, orn, key)))
+    offset = 2 + 3 * len(pieces)
     directory = bytearray(struct.pack('<H', len(pieces)))
     for p in pieces:
-        directory += struct.pack('<H', offset // 2)
+        directory += struct.pack('<I', offset)[:3]
         offset += len(p)
     return bytes(directory) + b''.join(pieces)
+
+
+# ---- wall ornaments ----------------------------------------------------------------------------
+# DM's 60 wall ornaments (switches, locks, alcoves, torch holders, the mirrors...) are two pictures
+# each from item 121: seen from the side, then from the front, both as at depth 1. Farther off
+# they're shrunk, with darker colours. Where each goes, for each of 13 places a wall face can be
+# seen, is one of 8 sets of boxes: (x1, x2, y1, y2, byte width, height); the width in pixels is
+# twice the byte width. From ScummVM's DisplayMan (G0205, G0194; the Atari ST's D3 boxes).
+FIRST_WALL_ORN, WALL_ORNS = 121, 60
+# The 13 places (view.c's VW_): 0 D3L's right side, 1 D3R's left side, 2-4 the fronts of D3L,
+# D3C, D3R, 5 D2L's right side, 6 D2R's left side, 7-9 the fronts of D2L, D2C, D2R, 10 D1L's
+# right side, 11 D1R's left side, 12 D1C's front.
+WALL_ORN_BOXES = [
+    [(80, 83, 41, 45, 8, 5), (140, 143, 41, 45, 8, 5), (16, 29, 39, 50, 8, 12), (107, 120, 39, 50, 8, 12),
+     (187, 200, 39, 50, 8, 12), (67, 77, 40, 49, 8, 10), (146, 156, 40, 49, 8, 10), (0, 17, 38, 55, 16, 18),
+     (102, 123, 38, 55, 16, 18), (206, 223, 38, 55, 16, 18), (48, 63, 38, 56, 8, 19), (160, 175, 38, 56, 8, 19),
+     (96, 127, 36, 63, 16, 28)],
+    [(74, 82, 41, 60, 8, 20), (141, 149, 41, 60, 8, 20), (1, 47, 37, 63, 24, 27), (88, 134, 37, 63, 24, 27),
+     (171, 217, 37, 63, 24, 27), (61, 76, 38, 67, 8, 30), (147, 162, 38, 67, 8, 30), (0, 43, 37, 73, 32, 37),
+     (80, 143, 37, 73, 32, 37), (180, 223, 37, 73, 32, 37), (32, 63, 36, 83, 16, 48), (160, 191, 36, 83, 16, 48),
+     (64, 159, 36, 91, 48, 56)],
+    [(80, 83, 66, 70, 8, 5), (140, 143, 66, 70, 8, 5), (16, 29, 64, 75, 8, 12), (106, 119, 64, 75, 8, 12),
+     (187, 200, 64, 75, 8, 12), (67, 77, 74, 83, 8, 10), (146, 156, 74, 83, 8, 10), (0, 17, 73, 90, 16, 18),
+     (100, 121, 73, 90, 16, 18), (206, 223, 73, 90, 16, 18), (48, 63, 84, 102, 8, 19), (160, 175, 84, 102, 8, 19),
+     (96, 127, 92, 119, 16, 28)],
+    [(80, 83, 49, 53, 8, 5), (140, 143, 49, 53, 8, 5), (16, 29, 50, 61, 8, 12), (106, 119, 50, 61, 8, 12),
+     (187, 200, 50, 61, 8, 12), (67, 77, 53, 62, 8, 10), (146, 156, 53, 62, 8, 10), (0, 17, 55, 72, 16, 18),
+     (100, 121, 55, 72, 16, 18), (206, 223, 55, 72, 16, 18), (48, 63, 57, 75, 8, 19), (160, 175, 57, 75, 8, 19),
+     (96, 127, 64, 91, 16, 28)],
+    [(75, 90, 40, 44, 8, 5), (133, 148, 40, 44, 8, 5), (1, 48, 44, 49, 24, 6), (88, 135, 44, 49, 24, 6),
+     (171, 218, 44, 49, 24, 6), (60, 77, 40, 46, 16, 7), (146, 163, 40, 46, 16, 7), (0, 35, 43, 50, 32, 8),
+     (80, 143, 43, 50, 32, 8), (184, 223, 43, 50, 32, 8), (32, 63, 41, 52, 16, 12), (160, 191, 41, 52, 16, 12),
+     (64, 159, 41, 52, 48, 12)],
+    [(78, 85, 36, 51, 8, 16), (138, 145, 36, 51, 8, 16), (10, 41, 34, 53, 16, 20), (98, 129, 34, 53, 16, 20),
+     (179, 210, 34, 53, 16, 20), (66, 75, 34, 56, 8, 23), (148, 157, 34, 56, 8, 23), (0, 26, 33, 61, 24, 29),
+     (91, 133, 33, 61, 24, 29), (194, 223, 33, 61, 24, 29), (41, 56, 31, 65, 8, 35), (167, 182, 31, 65, 8, 35),
+     (80, 143, 29, 71, 32, 43)],
+    [(75, 82, 25, 75, 8, 51), (142, 149, 25, 75, 8, 51), (12, 60, 25, 75, 32, 51), (88, 136, 25, 75, 32, 51),
+     (163, 211, 25, 75, 32, 51), (64, 73, 20, 90, 8, 71), (150, 159, 20, 90, 8, 71), (0, 38, 20, 90, 32, 71),
+     (82, 142, 20, 90, 32, 71), (184, 223, 20, 90, 32, 71), (41, 56, 9, 119, 8, 111), (169, 184, 9, 119, 8, 111),
+     (64, 159, 9, 119, 48, 111)],
+    [(74, 85, 25, 75, 8, 51), (137, 149, 25, 75, 8, 51), (0, 83, 25, 75, 48, 51), (74, 149, 25, 75, 48, 51),
+     (139, 223, 25, 75, 48, 51), (60, 77, 20, 90, 16, 71), (146, 163, 20, 90, 16, 71), (0, 74, 20, 90, 56, 71),
+     (60, 163, 20, 90, 56, 71), (149, 223, 20, 90, 56, 71), (32, 63, 9, 119, 16, 111), (160, 191, 9, 119, 16, 111),
+     (32, 191, 9, 119, 80, 111)],
+]
+WALL_ORN_SET = [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 2, 2, 1, 1, 1, 1, 1, 4, 4, 4, 5, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 0, 2, 6, 6, 6, 7]
+# DM's colours for wall ornaments and door buttons at depth 3 and 2 (ScummVM's G0198, G0199).
+PAL_D3 = [0, 0, 12, 3, 4, 3, 0, 6, 3, 9, 10, 11, 0, 1, 0, 2]
+PAL_D2 = [0, 12, 1, 3, 4, 3, 6, 7, 5, 9, 10, 11, 0, 2, 14, 13]
+PORTRAITS, PORTRAIT_COUNT = 26, 24
+PORTRAIT_BOX = (96, 127, 35, 63)        # in the mirror, at depth 1
+
+
+def shrink(src, sw, sh, dw, dh, pal):
+    """DM's shrinking (nearest pixel) with a colour change: ScummVM's blitToBitmapShrinkWithPalChange."""
+    sx_step, sy_step = (32768 * sw) // dw, (32768 * sh) // dh
+    out = []
+    for y in range(dh):
+        row = ((y * sy_step) // 32768) * sw
+        for x in range(dw):
+            out.append(pal[src[row + (x * sx_step) // 32768]])
+    return out
+
+
+def mirrored(px, w, h):
+    return [px[y * w + w - 1 - x] for y in range(h) for x in range(w)]
+
+
+def boxed_canvas(px, w, h, box, src_x, src_y=0, clear=CLEAR):
+    """A canvas with picture px (w x h) shown in box (x1, x2, y1, y2) from (src_x, src_y)."""
+    canvas = [-1] * (VIEW_W * VIEW_H)
+    x1, x2, y1, y2 = box[:4]
+    for y in range(y1, y2 + 1):
+        for x in range(x1, x2 + 1):
+            sx, sy = src_x + x - x1, src_y + y - y1
+            if 0 <= sx < w and 0 <= sy < h and 0 <= x < VIEW_W and 0 <= y < VIEW_H:
+                c = px[sy * w + sx]
+                if c != clear:
+                    canvas[y * VIEW_W + x] = c
+    return canvas
+
+
+def ornament_canvas(G, orn, vw):
+    """Wall ornament orn at place vw, as DM draws it (ScummVM's isDrawnWallOrnAnAlcove)."""
+    boxes = WALL_ORN_BOXES[WALL_ORN_SET[orn]]
+    box = boxes[vw]
+    front = vw in (2, 3, 4, 7, 8, 9, 12)
+    w, h, px = dmimg.decode(G.item(FIRST_WALL_ORN + orn * 2 + front))
+    if vw >= 10:
+        if vw == 11:
+            px = mirrored(px, w, h)
+        return boxed_canvas(px, w, h, box, 0)
+    flip = vw in (1, 6)
+    ref = boxes[12] if front else boxes[11] if flip else boxes[10]
+    assert (w, h) == (ref[4] * 2, ref[5]), (orn, vw, w, h, ref)
+    coords = boxes[vw + (1 if vw == 7 else -1 if vw == 9 else 0)]
+    dw, dh = box[4] * 2, box[5]
+    px = shrink(px, w, h, dw, dh, PAL_D3 if vw <= 4 else PAL_D2)
+    src_x = coords[1] - coords[0]
+    if flip:
+        px = mirrored(px, dw, dh)
+        src_x = 15 - (src_x & 15)
+    elif vw == 7:
+        src_x -= box[1] - box[0]
+    else:
+        src_x = 0
+    return boxed_canvas(px, dw, dh, box, src_x)
+
+
+# ---- floors: pits, teleporter fields, floor ornaments ---------------------------------------------
+# The 12 floor places (view.c's sq_pos): D3L, D3C, D3R, D2L, D2C, D2R, D1L, D1C, D1R, D0L, D0C,
+# D0R. A right-hand place shows the left one's picture mirrored.
+# Pits: (item, x1, x2, y1, y2), from ScummVM's G0140-G0151; invisible pits (only seen from depth 2
+# in) have pictures of their own.
+PITS = [(49, 0, 79, 66, 73), (50, 64, 159, 66, 73), (49, 144, 223, 66, 73),
+        (51, 0, 79, 77, 88), (52, 64, 159, 77, 88), (51, 144, 223, 77, 88),
+        (53, 0, 63, 93, 116), (54, 32, 191, 93, 116), (53, 160, 223, 93, 116),
+        (55, 0, 31, 124, 135), (56, 16, 207, 124, 135), (55, 192, 223, 124, 135)]
+INVISIBLE_PIT = {3: 57, 4: 58, 5: 57, 6: 59, 7: 60, 8: 59, 9: 61, 10: 62, 11: 61}
+# Teleporter fields: the sparkles of item 73 over each place's wall box, cut to shape by a mask
+# (items 69-72, mirrored on the right) for the places to the side: (x1, x2, y1, y2, mask, flip,
+# mask x), from ScummVM's G0163 and G0188.
+FIELD, FIELD_MASK = 73, 69
+FIELDS = [(0, 83, 25, 75, 0, False, 11), (74, 149, 25, 75, None, False, 0), (139, 223, 25, 75, 0, True, 0),
+          (0, 74, 20, 90, 1, False, 5), (60, 163, 20, 90, None, False, 0), (149, 223, 20, 90, 1, True, 0),
+          (0, 63, 9, 119, 2, False, 0), (32, 191, 9, 119, None, False, 0), (160, 223, 9, 119, 2, True, 0),
+          (0, 31, 0, 135, 3, False, 0), (0, 223, 0, 135, None, False, 0), (192, 223, 0, 135, 3, True, 0)]
+# Floor ornaments (pressure pads, grates, moss, puddles...): 6 pictures each from item 247 (D3L,
+# D3C, D2L, D2C, D1L, D1C), in one of 3 sets of boxes for D3L-D1R (ScummVM's G0206, G0195).
+FIRST_FLOOR_ORN, FLOOR_ORNS = 247, 9
+FLOOR_ORN_SET = [0, 0, 0, 0, 2, 0, 0, 2, 0]
+FLOOR_ORN_BOXES = [
+    [(32, 79, 66, 71), (96, 127, 66, 71), (144, 191, 66, 71), (0, 63, 77, 87), (80, 143, 77, 87),
+     (160, 223, 77, 87), (0, 31, 92, 116), (80, 143, 92, 116), (192, 223, 92, 116)],
+    [(0, 95, 66, 74), (64, 159, 66, 74), (128, 223, 66, 74), (0, 79, 75, 89), (56, 167, 75, 89),
+     (144, 223, 75, 89), (0, 63, 90, 118), (32, 191, 90, 118), (160, 223, 90, 118)],
+    [(42, 57, 68, 72), (104, 119, 68, 72), (166, 181, 68, 72), (9, 40, 80, 85), (96, 127, 80, 85),
+     (183, 214, 80, 85), (0, 15, 97, 108), (96, 127, 97, 108), (208, 223, 97, 108)],
+]
+
+
+def picture_canvas(G, item, box, flip):
+    w, h, px = dmimg.decode(G.item(item))
+    if flip:
+        px = mirrored(px, w, h)
+    return boxed_canvas(px, w, h, box, 0)
+
+
+def pit_canvas(G, pos, invisible):
+    item, x1, x2, y1, y2 = PITS[pos]
+    if invisible:
+        item = INVISIBLE_PIT[pos]
+    return picture_canvas(G, item, (x1, x2, y1, y2), pos % 3 == 2)
+
+
+def field_canvas(G, pos):
+    x1, x2, y1, y2, mask, flip, mx = FIELDS[pos]
+    tw, th, tile = dmimg.decode(G.item(FIELD))
+    if mask is not None:
+        mw, mh, mpx = dmimg.decode(G.item(FIELD_MASK + mask))
+        if flip:
+            mpx = mirrored(mpx, mw, mh)
+    canvas = [-1] * (VIEW_W * VIEW_H)
+    for y in range(y1, y2 + 1):
+        for x in range(x1, x2 + 1):
+            if mask is not None:
+                u, v = mx + x - x1, y - y1
+                if not (0 <= u < mw and v < mh) or not mpx[v * mw + u]:
+                    continue
+            c = tile[(y % th) * tw + x % tw]
+            if c != CLEAR:
+                canvas[y * VIEW_W + x] = c
+    return canvas
+
+
+def floor_orn_canvas(G, orn, pos):
+    box = FLOOR_ORN_BOXES[FLOOR_ORN_SET[orn]][pos]
+    item = FIRST_FLOOR_ORN + orn * 6 + [0, 1, 0, 2, 3, 2, 4, 5, 4][pos]
+    return picture_canvas(G, item, box, pos % 3 == 2)
+
+
+# ---- doors' ornaments and buttons -------------------------------------------------------------
+# A door's ornament (iron bars, locks, jewels...) is drawn onto its picture before it's shown,
+# so its see-through parts make holes in the door. One picture each from item 303, as at depth
+# 1; farther off shrunk, with other colours. Boxes on the door's picture (48x41, 64x61, 96x88)
+# for depth 3, 2, 1 in one of 4 sets (ScummVM's G0207, G0196). DM's "ornament" 12 here is the
+# broken door (item 301), drawn over doors that have been bashed down.
+FIRST_DOOR_ORN, DOOR_ORN_BROKEN, DOOR_ORN_NONE = 303, 12, 15
+DOOR_BROKEN_PICTURE = 301
+DOOR_ORN_SET = [0, 1, 1, 1, 0, 2, 3, 1, 2, 2, 1, 1, 1]
+DOOR_ORN_BOXES = [
+    [(17, 31, 8, 17, 10), (22, 42, 11, 23, 13), (32, 63, 13, 31, 19)],
+    [(0, 47, 0, 40, 41), (0, 63, 0, 60, 61), (0, 95, 0, 87, 88)],
+    [(17, 31, 15, 24, 10), (22, 42, 22, 34, 13), (32, 63, 31, 49, 19)],
+    [(23, 35, 31, 39, 9), (30, 48, 41, 52, 12), (44, 75, 61, 79, 19)],
+]
+PAL_DOOR_ORN_D3 = [0, 12, 1, 3, 4, 3, 0, 6, 3, 9, 10, 11, 0, 2, 0, 13]
+GOLD = 9                                # an ornament's see-through colour
+# Door buttons: item 315 (16x9) at D1C, shrunk farther off: (x1, x2, y1, y2, height) at D3R, D3C,
+# D2C, D1C (ScummVM's G0208).
+DOOR_BUTTON = 315
+DOOR_BUTTONS = [(199, 204, 41, 44, 4), (136, 141, 41, 44, 4), (144, 155, 42, 47, 6), (160, 175, 44, 52, 9)]
+
+
+def door_canvas(G, door_set, orn, key):
+    """A shut door of door_set, with ornament orn (or DOOR_ORN_NONE), at place key."""
+    depth, slices = DOOR_PANELS[key]
+    w, h, px = dmimg.decode(G.item(FIRST_DOOR_SET + door_set * 3 + depth))
+    px = list(px)
+    if orn != DOOR_ORN_NONE:
+        item = DOOR_BROKEN_PICTURE if orn == DOOR_ORN_BROKEN else FIRST_DOOR_ORN + orn
+        ow, oh, opx = dmimg.decode(G.item(item))
+        x1, x2, y1, y2, oh2 = DOOR_ORN_BOXES[DOOR_ORN_SET[orn]][depth]
+        if depth < 2:
+            ow2 = x2 - x1 + 1
+            opx = shrink(opx, ow, oh, ow2, oh2, PAL_DOOR_ORN_D3 if depth == 0 else list(range(16)))
+            ow, oh = ow2, oh2
+        for y in range(y1, y2 + 1):
+            for x in range(x1, x2 + 1):
+                if x - x1 < ow and y - y1 < oh and x < w and y < h:
+                    c = opx[(y - y1) * ow + x - x1]
+                    if c != GOLD:
+                        px[y * w + x] = c
+    x1, x2, y1, y2, sx, sy = slices[0]
+    return boxed_canvas(px, w, h, (x1, x2, y1, y2), sx, sy)
+
+
+def door_button_canvas(G, pos):
+    w, h, px = dmimg.decode(G.item(DOOR_BUTTON))
+    x1, x2, y1, y2, bh = DOOR_BUTTONS[pos]
+    if pos < 3:
+        bw = (x2 - x1 + 2) & ~1
+        px = shrink(px, w, h, bw, bh, PAL_D3 if pos < 2 else PAL_D2)
+        w, h = bw, bh
+    return boxed_canvas(px, w, h, (x1, x2, y1, y2), 0)
+
+
+# ---- objects ----------------------------------------------------------------------------------
+# Objects lying in the view are DM's own pictures (from item 360), placed by view.c at run time
+# (bitmap.s's object_row shifts them into place), so each is stored once per size: as at depth 1,
+# and shrunk to 20/32 and 16/32 with darker colours (ScummVM's G0209 object aspects, G0213/4).
+# Per aspect: (first picture, byte width, height, flags, set of places); flags 1: shown mirrored
+# on the right, 0x10: a picture of its own in an alcove (the next one).
+FIRST_OBJECT = 360
+OBJECT_ASPECTS = [
+    (0, 24, 27, 0x11, 0), (2, 24, 8, 0, 1), (3, 8, 18, 0, 1), (4, 8, 8, 0, 1), (5, 8, 4, 0, 1),
+    (6, 16, 11, 0, 1), (7, 24, 13, 0, 0), (8, 32, 16, 0, 0), (9, 40, 24, 0, 0), (10, 16, 20, 0, 1),
+    (11, 40, 20, 0, 0), (12, 32, 4, 0, 1), (13, 40, 8, 0, 1), (14, 32, 17, 0, 0), (15, 40, 17, 0, 2),
+    (16, 16, 9, 0, 1), (17, 24, 5, 0, 1), (18, 16, 9, 0, 0), (19, 8, 4, 0, 1), (20, 32, 21, 0, 2),
+    (21, 32, 25, 0, 2), (22, 32, 14, 0, 1), (23, 32, 26, 0, 2), (24, 32, 16, 0, 0), (25, 32, 16, 0, 0),
+    (26, 16, 16, 0, 1), (27, 16, 15, 0, 1), (28, 16, 13, 0, 1), (29, 16, 10, 0, 1), (30, 40, 24, 0, 0),
+    (31, 40, 9, 0, 1), (32, 16, 3, 0, 1), (33, 32, 5, 0, 1), (34, 40, 16, 0, 0), (35, 8, 7, 0, 1),
+    (36, 32, 7, 0, 1), (37, 24, 14, 0, 0), (38, 16, 8, 0, 0), (39, 8, 3, 0, 1), (40, 40, 9, 0, 1),
+    (41, 24, 14, 0, 0), (42, 40, 20, 0, 0), (43, 40, 15, 0, 1), (44, 32, 10, 0, 1), (45, 32, 19, 0, 0),
+    (46, 40, 25, 0, 2), (47, 24, 7, 0, 1), (48, 8, 7, 0, 1), (49, 16, 5, 0, 1), (50, 8, 9, 0, 1),
+    (51, 32, 11, 0, 1), (52, 32, 14, 0, 0), (53, 24, 20, 0, 0), (54, 16, 14, 0, 1), (55, 32, 23, 0, 0),
+    (56, 24, 16, 0, 0), (57, 32, 25, 0, 0), (58, 24, 25, 0, 0), (59, 8, 8, 0, 1), (60, 8, 7, 0, 1),
+    (61, 8, 8, 0, 1), (62, 8, 8, 0, 1), (63, 8, 5, 0, 1), (64, 8, 13, 1, 1), (65, 16, 13, 0, 1),
+    (66, 16, 14, 0, 0), (67, 16, 10, 0, 1), (68, 8, 18, 0, 1), (69, 8, 17, 0, 1), (70, 32, 18, 0, 0),
+    (71, 16, 23, 0, 0), (72, 16, 24, 0, 0), (73, 16, 15, 0, 0), (74, 8, 7, 0, 1), (75, 8, 15, 0, 1),
+    (76, 8, 9, 0, 1), (77, 16, 14, 0, 0), (78, 8, 8, 0, 1), (79, 16, 9, 0, 1), (80, 8, 13, 1, 1),
+    (81, 8, 18, 0, 1), (82, 24, 28, 0, 0), (83, 40, 13, 0, 1), (84, 8, 4, 0, 1), (85, 32, 17, 0, 0),
+]
+OBJECT_SCALES = [32, 20, 16]
+PAL_FLOOR_D3 = [0, 12, 1, 3, 4, 3, 0, 6, 3, 9, 10, 11, 0, 2, 14, 13]
+# Where objects lie: for each set, each view square (D3C, D3L, D3R, D2C, D2L, D2R, D1C, D1L, D1R,
+# D0C) and each place in it (4 cells, then an alcove), the middle of the bottom (ScummVM's G0218).
+OBJECT_PLACES = [
+    [[(0, 0), (0, 0), (125, 72), (95, 72), (112, 64)], [(0, 0), (0, 0), (62, 72), (25, 72), (24, 64)],
+     [(0, 0), (0, 0), (200, 72), (162, 72), (194, 64)], [(92, 78), (132, 78), (136, 86), (88, 86), (112, 74)],
+     [(10, 78), (53, 78), (41, 86), (0, 0), (3, 74)], [(171, 78), (218, 78), (0, 0), (183, 86), (219, 74)],
+     [(83, 96), (141, 96), (148, 111), (76, 111), (112, 94)], [(0, 0), (26, 96), (5, 111), (0, 0), (0, 0)],
+     [(197, 96), (0, 0), (0, 0), (220, 111), (0, 0)], [(66, 131), (158, 131), (0, 0), (0, 0), (0, 0)]],
+    [[(0, 0), (0, 0), (125, 72), (95, 72), (112, 63)], [(0, 0), (0, 0), (62, 72), (25, 72), (24, 63)],
+     [(0, 0), (0, 0), (200, 72), (162, 72), (194, 63)], [(92, 78), (132, 78), (136, 86), (88, 86), (112, 73)],
+     [(10, 78), (53, 78), (41, 86), (0, 0), (3, 73)], [(171, 78), (218, 78), (0, 0), (183, 86), (219, 73)],
+     [(83, 96), (141, 96), (148, 111), (76, 111), (112, 89)], [(0, 0), (26, 96), (5, 111), (0, 0), (0, 0)],
+     [(197, 96), (0, 0), (0, 0), (220, 111), (0, 0)], [(66, 131), (158, 131), (0, 0), (0, 0), (0, 0)]],
+    [[(0, 0), (0, 0), (125, 75), (95, 75), (112, 65)], [(0, 0), (0, 0), (62, 75), (25, 75), (24, 65)],
+     [(0, 0), (0, 0), (200, 75), (162, 75), (194, 65)], [(92, 81), (132, 81), (136, 88), (88, 88), (112, 76)],
+     [(10, 81), (53, 81), (41, 88), (0, 0), (3, 76)], [(171, 81), (218, 81), (0, 0), (183, 86), (219, 76)],
+     [(83, 98), (141, 98), (148, 115), (76, 115), (112, 98)], [(0, 0), (26, 98), (5, 115), (0, 0), (0, 0)],
+     [(197, 98), (0, 0), (0, 0), (220, 115), (0, 0)], [(66, 135), (158, 135), (0, 0), (0, 0), (0, 0)]],
+]
+
+
+def object_sprite(px, w, h):
+    """A picture (w x h, colour 10 see-through) as an object sprite: its width in double pixels,
+    height, own colour, then each row: for each 4 double pixels, a byte of pattern and one of
+    mask. Every cell it covers can show the background, the two greys and one colour of its own:
+    the one it uses most."""
+    fw = w // 2
+    fat = []
+    for y in range(h):
+        for x in range(fw):
+            a, b = px[y * w + 2 * x], px[y * w + 2 * x + 1]
+            if a == CLEAR and b == CLEAR:
+                fat.append(None)
+            elif a == CLEAR or b == CLEAR:
+                fat.append(c64_colour(b if a == CLEAR else a, x, y))
+            elif abs(LUMA[a] - LUMA[b]) >= 2:
+                fat.append(c64_colour(a if LUMA[a] < LUMA[b] else b, x, y, True))
+            else:
+                fat.append(c64_colour(a if (x + y) & 1 else b, x, y))
+    counts = {}
+    for c in fat:
+        if c is not None and c not in FIXED_CODES:
+            counts[c] = counts.get(c, 0) + 1
+    own = max(counts, key=lambda c: counts[c]) if counts else None
+    allowed = [12, 11, 15] + ([own] if own is not None else [])
+    cells = (fw + 3) // 4
+    out = bytearray([fw, h, own if own is not None else 255])
+    for y in range(h):
+        for cx in range(cells):
+            pattern = mask = 0
+            for i in range(4):
+                x = cx * 4 + i
+                c = fat[y * fw + x] if x < fw else None
+                if c is None:
+                    continue
+                if c not in allowed:
+                    c = dmimg.nearest(dmimg.C64[c], allowed)
+                pattern |= FIXED_CODES.get(c, 3) << (6 - 2 * i)
+                mask |= 3 << (6 - 2 * i)
+            out += bytes([pattern, mask])
+    return bytes(out)
+
+
+def object_pieces(G):
+    """Each object aspect at each size, plain, mirrored (if it ever is) and in an alcove (if it
+    has a picture for that): 9 pieces each."""
+    pieces = []
+    for rel, bw, h, flags, _ in OBJECT_ASPECTS:
+        for scale in OBJECT_SCALES:
+            for variant in range(3):
+                if (variant == 1 and not flags & 1) or (variant == 2 and not flags & 0x10):
+                    pieces.append(b'\0')
+                    continue
+                w, hh, px = dmimg.decode(G.item(FIRST_OBJECT + rel + (variant == 2)))
+                if scale != 32:
+                    sw = (bw * scale + scale // 2) // 32
+                    sh = (h * scale + scale // 2) // 32
+                    px = shrink(px, w, hh, sw * 2, sh, PAL_FLOOR_D3 if scale == 16 else list(range(16)))
+                    w, hh = sw * 2, sh
+                if variant == 1:
+                    px = mirrored(px, w, hh)
+                pieces.append(object_sprite(px, w, hh))
+    return pieces
+
+
+# Spells in flight: DM's pictures from item 316 for a fireball, lightning, anything else, and
+# poison (ScummVM's G0210 aspects 10, 3, 11, 13), at depth 3, 2, 1 and 0 (G0215's scales; the
+# colours darker at depth 3).
+FIRST_PROJECTILE = 316
+PROJECTILES = [(28, 16, 28), (9, 32, 15), (29, 16, 11), (31, 16, 24)]
+PROJECTILE_SCALES = [16, 22, 28, 32]
+
+
+def projectile_pieces(G):
+    pieces = []
+    for rel, bw, h in PROJECTILES:
+        w, hh, native = dmimg.decode(G.item(FIRST_PROJECTILE + rel))
+        for scale in PROJECTILE_SCALES:
+            px = native
+            sw, sh = w, hh
+            if scale != 32:
+                sw = (bw * scale + scale // 2) // 32 * 2
+                sh = (h * scale + scale // 2) // 32
+                px = shrink(native, w, hh, sw, sh, PAL_FLOOR_D3 if scale == 16 else list(range(16)))
+            pieces.append(object_sprite(px, sw, sh))
+    return pieces
+
+
+def object_tables(objinfo):
+    """What view.c needs to place objects, kept in DMWAL: each set's places (3 x 10 x 5 x X, Y),
+    each aspect's set, flags (16: mirrored on the right, 32: an alcove picture), and each object
+    type's aspect."""
+    out = bytearray()
+    for places in OBJECT_PLACES:
+        for square in places:
+            for x, y in square:
+                out += bytes([x, y])
+    out += bytes(cs | (flags & 1) << 4 | (flags & 0x10) << 1 for _, _, _, flags, cs in OBJECT_ASPECTS)
+    out += bytes(o[1] for o in objinfo)
+    return bytes(out)
+
+
+# ---- writing on walls -----------------------------------------------------------------------------
+# DM's inscription font (item 120): 36 shaded letters, 8x8 each, side by side: A-Z, space, full
+# stop, then symbols. Each becomes one cell of the bitmap: 8 bytes of pattern, 8 of mask (view.c
+# draws it with bitmap.s's stamp_cell, the cell's own colour white).
+INSCRIPTION_FONT, INSCRIPTION_CHARS = 120, 36
+
+
+def inscription_cells(G):
+    w, h, px = dmimg.decode(G.item(INSCRIPTION_FONT))
+    out = bytearray()
+    for c in range(INSCRIPTION_CHARS):
+        canvas = [-1] * (VIEW_W * VIEW_H)
+        for y in range(8):
+            for x in range(8):
+                v = px[y * w + c * 8 + x]
+                if v != CLEAR:
+                    canvas[y * VIEW_W + x] = v
+        data = piece_bytes(canvas)
+        if len(data) < 7:
+            out += bytes(16)                    # nothing: a space
+            continue
+        # One row of one cell: rows, row length, cell row, column, cells, then the cell.
+        flag = data[6]
+        pattern = data[7:15]
+        mask = data[15:23] if flag & 2 else b'\xff' * 8
+        out += pattern + mask
+    return bytes(out)
+
+
+def portrait_canvas(portraits, champion):
+    """Champion's portrait in a mirror right ahead (32x29 pixels each, eight to a row)."""
+    w, h, px = portraits
+    return boxed_canvas(px, w, h, PORTRAIT_BOX, (champion & 7) * 32, (champion >> 3) * 29, clear=1)
 
 
 # Where each kind of piece starts in DMWAL (view.c).
 PIECE_WALL = 1
 PIECE_DOOR_FRAME = PIECE_WALL + len(ORDER)
-PIECE_DOOR = PIECE_DOOR_FRAME + len(DF_KEYS)
-PIECE_STAIRS = PIECE_DOOR + DOOR_SETS * len(DP_KEYS)
-PIECES = PIECE_STAIRS + 2 * len(ST_KEYS)
+PIECE_STAIRS = PIECE_DOOR_FRAME + len(DF_KEYS)
+PIECE_ORN = PIECE_STAIRS + 2 * len(ST_KEYS)
+PIECE_PORTRAIT = PIECE_ORN + WALL_ORNS * 13
+PIECE_PIT = PIECE_PORTRAIT + PORTRAIT_COUNT       # + place, + 12 for an invisible pit
+PIECE_FIELD = PIECE_PIT + 24                        # + place
+PIECE_FLOOR_ORN = PIECE_FIELD + 12                  # + ornament * 9 + place
+PIECE_DOOR_BUTTON = PIECE_FLOOR_ORN + FLOOR_ORNS * 9  # + D3R, D3C, D2C, D1C
+PIECE_OBJ = PIECE_DOOR_BUTTON + 4                   # + (aspect * 3 + size) * 3 + variant
+PIECE_OBJ_TABLES = PIECE_OBJ + len(OBJECT_ASPECTS) * 9
+PIECE_PROJECTILE = PIECE_OBJ_TABLES + 1            # + kind * 4 + depth (3 to 0)
+PIECE_DOOR = PIECE_PROJECTILE + 16                  # + door kind * 9 + place (DP_KEYS); last
 
 # DMWAL is packed on the disk, and unpacked into far memory as it loads (walls.c). A byte below
 # $80 is followed by that many plus one bytes to copy; otherwise its bits 2-6 plus 3 are a

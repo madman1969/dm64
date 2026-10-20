@@ -113,6 +113,12 @@ extern unsigned char lev, lw, lh;   /* the party's level and its size */
 extern unsigned char px, py, pdir;  /* the party's square and direction (0 N, 1 E, 2 S, 3 W) */
 extern const signed char dir_dx[4], dir_dy[4];
 void level_enter (unsigned char l);
+/* The party's level's ornaments, as DM numbers them: its own lists of wall, floor and door
+** ornaments (kept with DMWAL's tables, copied in by level_enter). */
+extern unsigned char level_orns[48];
+#define WALL_ORN(i)  level_orns[i]
+#define FLOOR_ORN(i) level_orns[16 + (i)]
+#define DOOR_ORN(i)  level_orns[32 + (i)]
 unsigned char* sq_ptr (unsigned char x, unsigned char y);
 unsigned char sq_at (unsigned char x, unsigned char y);        /* walls outside the map */
 void mark_seen (unsigned char x, unsigned char y);             /* for the map */
@@ -134,8 +140,11 @@ void irq_vectors (void);                    /* first thing: see irq.s */
 void irq_init (void);
 extern unsigned char split_on;              /* 0: all text */
 void __fastcall__ blit_row (const unsigned char* row);
-void __fastcall__ stamp (unsigned char glyph);
-extern unsigned char bm_col, bm_row, bm_ink, bm_colour;
+void __fastcall__ stamp_cell (unsigned char glyph);  /* DM's inscription font */
+void __fastcall__ object_row (const unsigned char* row);   /* an object, a row at a time */
+extern unsigned char ob_cells, ob_shift, ob_y, ob_colour;
+extern signed char ob_col;
+extern unsigned char bm_col, bm_row;
 
 /* ---- view.c ---- */
 void view_draw (void);
@@ -255,7 +264,7 @@ void ovl_cast (void);
 void ovl_save (void);
 unsigned char ovl_load (void);
 unsigned char ovl_unpack (const char* name, unsigned long dst, unsigned long size,
-                          unsigned char* buf);  /* unpack.c, in overlay 2 */
+                          unsigned char* buf);  /* unpack.c, in overlay 4 */
 
 extern unsigned int game_time;
 

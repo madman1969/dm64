@@ -1,6 +1,6 @@
 ;
 ; unpackasm.s - the inner loop of unpack.c: unpacks lz_pack's bytes (tools/dmview.py) through a
-; 1K ring, as fast as the input comes. In overlay 2 with unpack.c.
+; 1K ring, as fast as the input comes. In overlay 4 with unpack.c.
 ;
 ; unsigned int __fastcall__ unpack_run (unsigned char* ring);
 ;   ring: 1K, page-aligned, followed by a page for the input. It calls unpack_refill (puts up to
@@ -14,7 +14,7 @@
         .export _unpack_run
         .import _unpack_refill, _unpack_flush
 
-        .segment "OVL3"
+        .segment "OVL5"
 
 _unpack_run:
         stx ring_hi

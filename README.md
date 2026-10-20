@@ -6,18 +6,19 @@ converts the real dungeon, texts, object names and rules tables. The C64 engine 
 new code, not a decompile.
 
 ![A mummy on level 2, in VICE](docs/screenshot-mummy.png)
-![The door of the Hall of Champions, in VICE](docs/screenshot-door.png)
+![A champion's mirror in the Hall of Champions, in VICE](docs/screenshot-mirror.png)
+![A chest, bones and torch holders, in VICE](docs/screenshot-items.png)
 
-*A mummy on level 2, and the door of the Hall of Champions. The walls, floor, ceiling and door
-are DM's own pictures, in a multicolour bitmap; the mummy is DM's own picture as C64 sprites.
-Screenshots from VICE.*
+*A mummy on level 2; Elija in his mirror in the Hall of Champions; a chest, some bones and
+torch holders. Everything in the view is DM's own pictures, in a multicolour bitmap; the mummy
+is DM's own picture as C64 sprites. Screenshots from VICE.*
 
 None of the game's data is in the source files. `tools/dmconv.py` extracts it into `gen/` and
 `bin/` at build time. Don't share those folders or the disk image they produce.
 
 ## What you need
 
-- **A C64 with a RAM expansion**: an REU (256K or more) or a SuperCPU. The 14 levels, the
+- **A C64 with a RAM expansion**: an REU (512K or more) or a SuperCPU. The 14 levels, the
   overlays and the pictures the view is drawn from are kept in far memory through the
   [FarMem](../Tedide/samples/FarMem) library. Only the level the party is on sits in the C64's
   own RAM. In VICE, use `-reu -reusize 512`.
@@ -39,8 +40,9 @@ image and add the REU.
 
 The disk holds seven files: `DM64` (the program), and `DMHI`, `DMLEV`, `DMOVL`, `DMSPR`, `DMTXT`
 and `DMWAL` (characters and the panel, levels, overlays, creature sprites, texts, and the view's
-pictures). On a real machine: `LOAD"DM64",8,1` then `RUN`. `DMWAL` is packed on the disk and
-unpacked into far memory as the game starts.
+pictures). On a real machine: `LOAD"DM64",8,1` then `RUN`. `DMWAL` is packed on the disk
+(about 190K) and unpacked into far memory as the game starts, so loading takes a while on a
+real 1581; a fast loader, an SD2IEC or an Ultimate helps.
 
 Saved games go on the same disk, as `DMSAVE1` and `DMSAVE2`. A save holds only the levels the
 party has been on, packed: about 10 blocks early on, up to about 120 with every level visited,
@@ -123,18 +125,23 @@ though less often the wiser they are.
   palette with each creature's colour replacements, shrunk to C64 multicolour sprites by
   `tools/dmimg.py`. FTL's picture packing was decoded with the help of ScummVM's Dungeon
   Master engine.
-- **The view's own pictures**: DM's floor, ceiling, walls, door frames, its four kinds of door
-  and its stairs, cut and placed as DM places them (the positions come from ScummVM's engine),
-  and converted to C64 multicolour by `tools/dmview.py`. Every cell keeps DM's greys in the same
-  four colours, so they never clash.
+- **The view's own pictures**: DM's floor, ceiling, walls, door frames, its four kinds of
+  door with their ornaments (iron bars you can see through, locks, jewels) and buttons, its
+  stairs, its 60 wall ornaments (switches, levers, locks, alcoves, torch holders, fountains,
+  the champions' mirrors with their portraits), floor ornaments (pressure pads, grates, moss),
+  pits, teleporter fields, the objects lying about, spells in flight, and its engraved
+  lettering for writing on walls. They're cut, shrunk and placed as DM does it (the tables
+  come from ScummVM's engine), including the ornaments DM scatters on plain walls at random,
+  and converted to C64 multicolour by `tools/dmview.py`.
 
 ### The engine
 
 - A first-person view the size of DM's (224x136), in a multicolour bitmap above the text, built
-  as DM builds it: the floor and ceiling, then walls, doors and stairs far to near. A raster
-  interrupt switches from the bitmap to text partway down the screen. Objects, wall switches,
-  keyholes, alcoves, mirrors, pits and teleporters are still small icons over the pictures, and
-  writing on the wall ahead is drawn on it in a tiny font; messages on the floor appear below.
+  as DM builds it: the floor and ceiling, then for each square far to near its walls and their
+  ornaments, doors, stairs, pits, floor ornaments, objects, spells and teleporter fields. A
+  raster interrupt switches from the bitmap to text partway down the screen. Messages on the
+  floor appear below. The view is drawn straight onto the screen (there's no room for a second
+  one), so you can see it being redrawn, for a moment, when something changes.
 - Creatures drawn from DM's own pictures. The one ahead is a large sprite that shifts between
   two frames (the second mirrored, as DM does) and flashes white when hit; up to three more,
   farther off or to the sides, are small sprites, hidden when something nearer is in the way.
@@ -171,29 +178,29 @@ though less often the wiser they are.
   here are simpler stand-ins, scaled by the spell's strength from the table and the power rune.
 - Throwing and shooting, bashing doors, creatures using doors and pits, and teleporting objects
   and creatures.
-- DM's own wall and floor decorations, door ornaments, objects in the view, pits,
-  teleporters, champion portraits, creatures' side and attack views, side views of stairs, and
-  sound.
+- Creatures' side, back and attack views, stairs seen from the side, holes in the ceiling
+  under pits, doors that slide sideways as they open (they all slide up here), footprints,
+  DM's champion portraits in the panel, and sound.
 - The endgame: the Firestaff, Lord Chaos and the fluxcage.
 
 ## How it fits in a C64
 
 ```text
 $0400-$07FF  buffers (the default screen's RAM)           LOWBSS segment, c64-dm64.cfg
-$0801-$B7D5  the program, rules tables, the party's level (3.2K buffer), the party's objects
-$B7D6-$BE7F  free (about 1.7K)
+$0801-$BB54  the program, rules tables, the party's level (3.2K buffer), the party's objects
+$BB55-$BE7F  free (about 800 bytes)
 $BE80-$C8FF  the overlay area: whichever overlay is in use (2.6K)
 $C900-$CBFF  C stack (768 bytes)
 $CC00-$CFFF  the screen; its top 17 rows are the bitmap's colours
 $D000-$D3FF  character set             } in the RAM under the I/O area; the video chip uses
 $D400-$D6FF  sprites (creatures, from  } bank 3 and always sees RAM there, the CPU writes
              far memory; the pointer)  } with I/O switched out (hw.c: hi_read)
-$D800-$DA87  the bitmap's tiny font and icons
+$DC00-$DE3F  DM's inscription font, as bitmap cells
 $E000-$FF3F  the bitmap (its top 17 rows: the view, and the panel beside it), in the RAM
              under the KERNAL
-far memory   the 14 level images, about 34K (DMLEV), the overlays, 10K (DMOVL), the
+far memory   the 14 level images, about 34K (DMLEV), the overlays, 13K (DMOVL), the
              creatures' sprites, 8.6K (DMSPR), the dungeon's texts, object names and our
-             own strings, 6K (DMTXT), and the view's pictures, 71K (DMWAL)
+             own strings, 6K (DMTXT), and the view's pictures, 382K (DMWAL): about 450K
 ```
 
 The screen is split by a raster interrupt (`src/irq.s`): its top 17 rows are a multicolour
@@ -204,7 +211,8 @@ greys, so its pictures fit without clashing. Each picture is stored (DMWAL) as t
 of the cells it covers, with masks for the cells it covers only partly, and copied in by
 `src/bitmap.s`. That code switches the KERNAL out to reach the bitmap underneath, and
 interrupts go on meanwhile: the RAM under the KERNAL's vectors points to a handler that
-switches it back in.
+switches it back in. Objects and spells in flight, which can be anywhere, are stored once per
+size and shifted into place a row at a time as they're drawn.
 
 Each level image (see the top of `tools/dmconv.py`) holds the level's squares, the start of
 each square's object list, its own tables of doors, teleporters, texts, sensors, creatures
@@ -213,12 +221,14 @@ within the level, so the image can be copied in and out of far memory whole. Obj
 picks up move into a separate pool (`dungeon.c`), which is how they cross levels.
 
 Code that's only needed now and then lives in **overlays** (`src/overlay.c`): recruiting,
-the inventory, help and the map, the casting screen, and saving and loading. The linker
-(`c64-dm64.cfg`) builds each to run in the same 2.6K area, the build joins them into DMOVL, and
-the game keeps
-them in far memory, copying one into the area when it's called. An overlay can call anything in
-the main program, but nothing in another overlay. A new rarely used feature belongs in one.
-The largest (saving) sets the area's size, `__OVLSIZE__` in the config.
+the inventory, help and the map, the casting screen, saving and loading, and unpacking DMWAL
+at the start. The linker (`c64-dm64.cfg`) builds each to run in the same 2.6K area, the build
+joins them into DMOVL, and the game keeps them in far memory, copying one into the area when
+it's called. An overlay can call anything in the main program, but nothing in another overlay.
+A new rarely used feature belongs in one. The largest (saving) sets the area's size,
+`__OVLSIZE__` in the config. (cc65 writes a file's string literals at its end, into whatever
+segment is in force there: so an overlay's file doesn't pop its segments at the end, or its
+strings would land in the main program.)
 
 ## Source
 
@@ -236,7 +246,7 @@ The largest (saving) sets the area's size, `__OVLSIZE__` in the config.
 | `src/dungeon.c` | Levels and overlays in far memory, squares, object lists, objects, texts |
 | `src/view.c` | The 3D view and sprites |
 | `src/irq.s` | The raster split between the bitmap and the text |
-| `src/bitmap.s` | Drawing into the bitmap: DMWAL's pieces, the tiny font and icons |
+| `src/bitmap.s` | Drawing into the bitmap: DMWAL's pieces, objects (shifted into place), lettering |
 | `src/ui.c` | Messages, the party and status lines, the screen modes, keyboard and mouse input |
 | `src/mouse.s` | The mouse pointer, for cc65's mouse drivers |
 | `src/party.c` | Champions: combat, eating and drinking |
