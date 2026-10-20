@@ -15,6 +15,7 @@
 
 #define CX 12
 #define CY 11
+#define FLOOR_NEAR 17       /* floor rows from here down are the party's own square: lighter */
 
 static const unsigned char plane_w[5] = { 12, 8, 5, 3, 2 };
 static const unsigned char plane_h[5] = { 11, 7, 4, 2, 1 };
@@ -31,6 +32,18 @@ static signed char sx, sy;          /* the square being drawn */
 static unsigned char sprite_depth;  /* 1 or 2 when a creature is right ahead, else 0 */
 static unsigned char sprite_type;
 static unsigned char sight;         /* how far ahead the party can see: the first wall, or 3 */
+
+/* Creature sprites, DM's own pictures (DMSPR, copied in from far memory as needed):
+**   sprites 0-3  the creature right ahead, a 2x2 block; two frames, $F000 and $F100, the second
+**                mirrored, swapped now and then as DM does
+**   sprites 4-6  up to three more, farther off or to the sides, small, at $F200, $F240, $F280
+**   sprite 7     the mouse pointer */
+#define MAXSMALL 3
+#define BIG_BLOCK  ((HI_SPRITES - 0xC000) / 64)
+#define SMALL_BLOCK (BIG_BLOCK + 8)
+static unsigned char nsmall, small_x[MAXSMALL], small_y[MAXSMALL], small_type[MAXSMALL];
+static unsigned char big_loaded = 255, small_loaded[MAXSMALL] = { 255, 255, 255 };
+unsigned char creature_flash;
 
 static void fill (signed char x0, signed char y0, signed char x1, signed char y1)
 {
@@ -348,12 +361,19 @@ static void square (signed char k, signed char l)
     floor_items (x0, y0);
     a = creature_at (sx, sy);
     if (a >= 0) {
+        type = th_creature[TH_INDEX (active[a].thing)][2] >> 8;
         if (!l && k < 3 && (!sprite_depth || k < sprite_depth)) {
             sprite_depth = k;
-            sprite_type = th_creature[TH_INDEX (active[a].thing)][2] >> 8;
+            sprite_type = type;
         } else {
-            put (x0, y0 - 1, G_MONSTER,
-                 creature_info[th_creature[TH_INDEX (active[a].thing)][2] >> 8].colour);
+            /* A marker, drawn in turn with everything else: if nothing nearer covers it, a
+            ** small sprite of the creature takes its place (place_sprites). */
+            put (x0, y0 - 1, G_MONSTER, creature_info[type].colour);
+            if (nsmall < MAXSMALL) {
+                small_x[nsmall] = x0;
+                small_y[nsmall] = y0 - 1;
+                small_type[nsmall++] = type;
+            }
         }
     }
     a = projectile_at (sx, sy);
@@ -365,6 +385,28 @@ static void square (signed char k, signed char l)
 void sprites_off (void)
 {
     VIC.spr_ena &= 0x80;            /* the mouse pointer stays */
+}
+
+/* Each tick: the creature ahead shifts between its two frames, and shows white for a moment
+** when it's hit. */
+void sprites_animate (void)
+{
+    unsigned char q, frame, col;
+    unsigned char* ptrs = SCREEN + 0x3F8;
+
+    if (!(VIC.spr_ena & 0x0F)) {
+        return;
+    }
+    frame = (game_time & 8) ? 4 : 0;
+    col = creature_info[sprite_type].colour;
+    if (creature_flash) {
+        --creature_flash;
+        col = COLOR_WHITE;
+    }
+    for (q = 0; q < 4; ++q) {
+        ptrs[q] = BIG_BLOCK + frame + q;
+        (&VIC.spr0_color)[q] = col;
+    }
 }
 
 /* Is the way ahead clear to depth k (no wall or closed door in between)? */
@@ -384,30 +426,90 @@ static unsigned char clear_to (unsigned char k)
     return 1;
 }
 
-static void place_sprites (void)
+/* The small creatures whose markers nothing nearer covered become sprites; returns their
+** sprite-enable bits. Called before the view is shown, so their markers can be cleared. */
+static unsigned char place_small (void)
 {
-    unsigned char shape, col, q, x, y, big;
+    unsigned char i, n = 0, bits = 0;
     unsigned char* ptrs = SCREEN + 0x3F8;
+    unsigned int p;
+
+    for (i = 0; i < nsmall; ++i) {
+        p = row_offset[small_y[i]] + small_x[i];
+        if (view_chars[p] != G_MONSTER) {
+            continue;                       /* hidden behind something nearer */
+        }
+        view_chars[p] = small_y[i] < CY ? ' ' : G_FLOOR;
+        view_cols[p] = COLOR_GRAY1;
+        if (small_loaded[n] != small_type[i]) {
+            sprite_fetch (small_type[i], 256, (void*) (HI_SPRITES + 512 + n * 64), 64);
+            small_loaded[n] = small_type[i];
+        }
+        ptrs[4 + n] = SMALL_BLOCK + n;
+        (&VIC.spr0_color)[4 + n] = creature_info[small_type[i]].colour;
+        VIC.spr_pos[4 + n].x = small_x[i] * 8 + 16;
+        VIC.spr_pos[4 + n].y = small_y[i] * 8 + 37;
+        bits |= 0x10 << n;
+        ++n;
+    }
+    return bits;
+}
+
+/* A multicolour sprite byte's four pixels, in the opposite order. */
+static unsigned char mirror (unsigned char b)
+{
+    return (b << 6) | ((b << 2) & 0x30) | ((b >> 2) & 0x0C) | (b >> 6);
+}
+
+/* Copies the creature ahead's sprite in from far memory, and makes its second frame by
+** mirroring it: each row of the right-hand blocks, reversed, becomes the left-hand one's. The
+** copy comes through view_cols, as the sprite area under the KERNAL can't be read back. */
+static void load_big (void)
+{
+    unsigned char* src = view_cols;
+    unsigned char* front = (unsigned char*) HI_SPRITES;
+    unsigned char* back = front + 256;
+    unsigned char half, row, b;
+    unsigned int l, r;
+
+    sprite_fetch (sprite_type, 0, src, 256);
+    memcpy (front, src, 256);
+    for (half = 0; half < 2; ++half) {          /* top blocks, then bottom */
+        for (row = 0; row < 21; ++row) {
+            l = half * 128 + row * 3;           /* left block's row; the right's is 64 on */
+            r = l + 64;
+            for (b = 0; b < 3; ++b) {
+                back[l + b] = mirror (src[r + 2 - b]);
+                back[r + b] = mirror (src[l + 2 - b]);
+            }
+        }
+    }
+    big_loaded = sprite_type;
+}
+
+static void place_sprites (unsigned char small_bits)
+{
+    unsigned char q, x, y, big;
 
     if (!sprite_depth || !clear_to (sprite_depth)) {
-        VIC.spr_ena &= 0x80;
+        VIC.spr_ena = (VIC.spr_ena & 0x80) | small_bits;
         return;
     }
-    shape = creature_info[sprite_type].shape;
-    col = creature_info[sprite_type].colour;
+    if (big_loaded != sprite_type) {
+        load_big ();
+    }
     big = sprite_depth == 1;
     x = big ? 72 : 96;
     y = big ? 98 : 124;
     for (q = 0; q < 4; ++q) {
-        ptrs[q] = (HI_SPRITES - 0xC000) / 64 + shape * 4 + q;
-        (&VIC.spr0_color)[q] = col;
         VIC.spr_pos[q].x = x + ((q & 1) ? (big ? 48 : 24) : 0);
         VIC.spr_pos[q].y = y + ((q & 2) ? (big ? 42 : 21) : 0);
     }
     VIC.spr_hi_x &= 0x80;
     VIC.spr_exp_x = big ? 0x0F : 0;
     VIC.spr_exp_y = big ? 0x0F : 0;
-    VIC.spr_ena = (VIC.spr_ena & 0x80) | 0x0F;
+    VIC.spr_ena = (VIC.spr_ena & 0x80) | small_bits | 0x0F;
+    sprites_animate ();
 }
 
 void view_draw (void)
@@ -425,12 +527,15 @@ void view_draw (void)
         }
     }
 
-    memset (view_chars, ' ', CY * VIEW_W);
-    memset (view_cols, COLOR_BLACK, CY * VIEW_W);
+    /* A faintly speckled ceiling, and a floor that's lighter near the party. */
+    memset (view_chars, G_CEIL, CY * VIEW_W);
+    memset (view_cols, COLOR_GRAY1, CY * VIEW_W);
     memset (view_chars + CY * VIEW_W, G_FLOOR, (VIEW_H - CY) * VIEW_W);
-    memset (view_cols + CY * VIEW_W, COLOR_GRAY1, (VIEW_H - CY) * VIEW_W);
+    memset (view_cols + CY * VIEW_W, COLOR_GRAY1, (FLOOR_NEAR - CY) * VIEW_W);
+    memset (view_cols + FLOOR_NEAR * VIEW_W, COLOR_GRAY2, (VIEW_H - FLOOR_NEAR) * VIEW_W);
 
     sprite_depth = 0;
+    nsmall = 0;
     for (sight = 1; sight < 3; ++sight) {
         y = sq_at (px + sight * dir_dx[pdir], py + sight * dir_dy[pdir]);
         if (SQ_TYPE (y) == E_WALL || (SQ_TYPE (y) == E_FAKE && !(y & FAKE_OPEN)) ||
@@ -447,11 +552,12 @@ void view_draw (void)
         }
     }
 
-    for (y = 0; y < VIEW_H; ++y) {
-        memcpy (scr, view_chars + row_offset[y], VIEW_W);
-        memcpy (col, view_cols + row_offset[y], VIEW_W);
+    y = place_small ();
+    for (i = 0; i < VIEW_H; ++i) {
+        memcpy (scr, view_chars + row_offset[i], VIEW_W);
+        memcpy (col, view_cols + row_offset[i], VIEW_W);
         scr += 40;
         col += 40;
     }
-    place_sprites ();
+    place_sprites (y);
 }

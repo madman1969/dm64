@@ -65,6 +65,7 @@ void hit_creature (signed char a, int dmg)
     unsigned char n = COUNT (r), i, x, y;
     unsigned int t;
 
+    creature_flash = 3;
     if ((int) r[3] > dmg) {
         r[3] -= dmg;
         return;

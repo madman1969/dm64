@@ -95,7 +95,10 @@ extern unsigned int (*th_obj)[2];   /* weapons, armour, scrolls, potions, chests
 extern unsigned int pool[POOL_SIZE][2];
 unsigned char dungeon_init (void);
 void overlay (unsigned char n);             /* copy overlay n in from far memory (overlay.c) */
+void sprite_fetch (unsigned char type, unsigned int offset, void* dst, unsigned int len);
 void level_flush (void);                    /* the party's level back to far memory */
+unsigned char levels_reload (void);         /* every level as on the disk again */
+extern unsigned int levels_visited;         /* bit n: level n has been entered (saving) */
 void level_reload (unsigned char l);        /* read level l afresh from far memory */
 unsigned long level_far_addr (unsigned char l);
 unsigned int to_party (unsigned int t);     /* a level's object -> the party's */
@@ -125,6 +128,8 @@ unsigned char face_cell (void);             /* the side of the wall ahead that f
 /* ---- view.c ---- */
 void view_draw (void);
 void sprites_off (void);
+void sprites_animate (void);                /* each tick: creatures' idle frames, hit flash */
+extern unsigned char creature_flash;        /* ticks the creature ahead shows white, when hit */
 
 /* ---- ui.c ---- */
 void ui_init (void);

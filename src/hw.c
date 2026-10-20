@@ -129,8 +129,8 @@ void hw_init (void)
     /* Sprites 0-3 are creatures, in multicolour; sprite 7 is the mouse pointer (mouse.s), whose
     ** image DMHI puts at HI_POINTER. */
     VIC.spr_mcolor = 0x7F;
-    VIC.spr_mcolor0 = COLOR_GRAY1;
-    VIC.spr_mcolor1 = COLOR_WHITE;
+    VIC.spr_mcolor0 = COLOR_BLACK;          /* shared by every creature: dmimg.py's SHARED0, 1 */
+    VIC.spr_mcolor1 = COLOR_GRAY3;
     VIC.spr_ena = 0;
     VIC.spr7_color = COLOR_WHITE;
     SCREEN[0x3FF] = (HI_POINTER - 0xC000) / 64;

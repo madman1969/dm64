@@ -29,6 +29,7 @@ static unsigned char level_buf[LEVEL_MAX];
 static farptr level_far[NLEVELS];
 
 unsigned char lev = 255, lw, lh;
+unsigned int levels_visited;        /* a bit for each level the party has been on */
 unsigned char px, py, pdir;
 const signed char dir_dx[4] = { 0, 1, 0, -1 };
 const signed char dir_dy[4] = { -1, 0, 1, 0 };
@@ -53,7 +54,7 @@ unsigned int pool[POOL_SIZE][2];
 extern unsigned char _OVL1_START__[], _OVL1_SIZE__[];
 #define OVL_START ((void*) _OVL1_START__)
 #define OVL_SIZE ((unsigned int) _OVL1_SIZE__)
-static farptr overlay_far;
+static farptr overlay_far, sprites_far;
 static unsigned char overlay_in = 255;
 
 void overlay (unsigned char n)
@@ -84,9 +85,9 @@ static farptr load_far (const char* name, farptr p, unsigned long size)
     return p;
 }
 
-/* Puts the level images (DMLEV) and overlays (DMOVL) in far memory, one after the other: there
-** past the few bytes FarMem's allocator keeps at the start, unused here. Returns 0 if they don't
-** fit, or can't be read. */
+/* Puts the level images (DMLEV), overlays (DMOVL) and creature sprites (DMSPR) in far memory,
+** one after another, past the few bytes FarMem's allocator keeps at the start (unused here).
+** Returns 0 if they don't fit, or can't be read. */
 unsigned char dungeon_init (void)
 {
     unsigned char l;
@@ -96,7 +97,7 @@ unsigned char dungeon_init (void)
         pool[l][0] = NONE;
     }
     if (far_init () <= FAR_NEAR ||
-        far_size () < p + LEVELS_TOTAL + (unsigned long) NOVERLAYS * OVL_SIZE) {
+        far_size () < p + LEVELS_TOTAL + (unsigned long) NOVERLAYS * OVL_SIZE + SPRITES_TOTAL) {
         return 0;
     }
     for (l = 0; l < NLEVELS; ++l) {
@@ -104,7 +105,18 @@ unsigned char dungeon_init (void)
         p += level_size[l];
     }
     overlay_far = load_far ("dmlev", 16, LEVELS_TOTAL);
-    return overlay_far && load_far ("dmovl", overlay_far, (unsigned long) NOVERLAYS * OVL_SIZE);
+    if (!overlay_far) {
+        return 0;
+    }
+    sprites_far = load_far ("dmovl", overlay_far, (unsigned long) NOVERLAYS * OVL_SIZE);
+    return sprites_far && load_far ("dmspr", sprites_far, SPRITES_TOTAL);
+}
+
+/* Copies part of a creature's sprites (DMSPR: big, mirrored big, small) to where the video
+** chip will show them, in the RAM under the KERNAL: a far copy writes straight there. */
+void sprite_fetch (unsigned char type, unsigned int offset, void* dst, unsigned int len)
+{
+    far_read (dst, sprites_far + (unsigned long) type * SPRITE_SET + offset, len);
 }
 
 void level_flush (void)
@@ -125,6 +137,13 @@ unsigned long level_far_addr (unsigned char l)
     return level_far[l];
 }
 
+/* Puts every level back as the disk has it, for loading a saved game over. */
+unsigned char levels_reload (void)
+{
+    lev = 255;
+    return load_far ("dmlev", 16, LEVELS_TOTAL) != 0;
+}
+
 void level_enter (unsigned char l)
 {
     if (l == lev) {
@@ -133,6 +152,7 @@ void level_enter (unsigned char l)
     level_flush ();
     far_read (level_buf, level_far[l], level_size[l]);
     lev = l;
+    levels_visited |= 1 << l;
     lw = levels[l].w;
     lh = levels[l].h;
     lsq = level_buf + IMG->off_sq;

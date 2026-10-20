@@ -7,7 +7,8 @@ new code, not a decompile.
 
 ![Chani fights a mummy in a doorway on level 2, in VICE](docs/screenshot-mummy.png)
 
-*Chani fights a mummy in a doorway on level 2. Screenshot from VICE.*
+*Chani fights a mummy in a doorway on level 2: DM's own mummy, as a C64 sprite. Screenshot from
+VICE.*
 
 None of the game's data is in the source files. `tools/dmconv.py` extracts it into `gen/` and
 `bin/` at build time. Don't share those folders or the disk image they produce.
@@ -31,10 +32,12 @@ Or open `DM64.tsln` in Tedide. It builds the FarMemC64 library, runs the convert
 pre-build step and makes the disk image as a post-build step. Its VICE arguments attach the disk
 image and add the REU.
 
-The disk holds four files: `DM64` (the program), and `DMHI`, `DMLEV` and `DMOVL` (data and
-overlays). On a real machine: `LOAD"DM64",8,1` then `RUN`.
+The disk holds five files: `DM64` (the program), and `DMHI`, `DMLEV`, `DMOVL` and `DMSPR`
+(data, overlays and creature sprites). On a real machine: `LOAD"DM64",8,1` then `RUN`.
 
-Saved games go on the same disk, as `DMSAVE1` and `DMSAVE2` (140 blocks each; both fit). Both
+Saved games go on the same disk, as `DMSAVE1` and `DMSAVE2`. A save holds only the levels the
+party has been on, packed: about 10 blocks early on, up to about 120 with every level visited,
+so both slots always fit. Both
 `build.ps1` and Tedide's post-build step (`tools\mkdisk.ps1`) keep them when they remake the
 disk image. A save only loads into a build made from the same game data, and `SAVE_VERSION` in
 `src/save.c` must go up whenever the saved structures change.
@@ -107,12 +110,19 @@ though less often the wiser they are.
   tables, unpacked by `tools/dmgfx.py`.
 - The spell table: all 25 spells' runes, required skill levels, skills, kinds and strengths,
   and the runes' mana costs.
+- **The creatures' own pictures**: every creature's front view from `GRAPHICS.DAT`, in DM's
+  palette with each creature's colour replacements, shrunk to C64 multicolour sprites by
+  `tools/dmimg.py`. FTL's picture packing was decoded with the help of ScummVM's Dungeon
+  Master engine.
 
 ### The engine
 
 - A first-person view in custom characters, with 45-degree perspective so the diagonals fit
-  exactly. Creatures ahead are multicolour sprites; ones farther off or to the side are icons.
-  Writing on the wall ahead is drawn on the wall, as in DM; messages on the floor appear below.
+  exactly, a speckled ceiling and a floor that's lighter near the party. Writing on the wall
+  ahead is drawn on the wall, as in DM; messages on the floor appear below.
+- Creatures drawn from DM's own pictures. The one ahead is a large sprite that shifts between
+  two frames (the second mirrored, as DM does) and flashes white when hit; up to three more,
+  farther off or to the sides, are small sprites, hidden when something nearer is in the way.
 - Sensors: floor plates (anything, party, object, party carrying an object, facing a
   direction), wall switches, keyholes that keep the key, any-object and specific-object
   sensors, AND/OR gates and countdowns. Effects are set, clear, toggle and hold, with delays,
@@ -146,26 +156,28 @@ though less often the wiser they are.
   here are simpler stand-ins, scaled by the spell's strength from the table and the power rune.
 - Throwing and shooting, bashing doors, creatures using doors and pits, and teleporting objects
   and creatures.
-- DM's own graphics (wall and floor decorations, champion portraits, creature pictures) and
-  sound.
+- DM's own wall and floor decorations, doors and champion portraits, creatures' side and
+  attack views, and sound.
 - The endgame: the Firestaff, Lord Chaos and the fluxcage.
 
 ## How it fits in a C64
 
 ```text
 $0400-$07FF  buffers (the default screen's RAM)           LOWBSS segment, c64-dm64.cfg
-$0801-$B60C  the program, rules tables, the party's level (3.2K buffer), the party's objects
-$B60D-$C2FF  free (about 3.2K)
-$C300-$CCFF  the overlay area: whichever overlay is in use (2.5K)
+$0801-$BAE3  the program, rules tables, the party's level (3.2K buffer), the party's objects
+$BAE4-$C27F  free (about 1.9K)
+$C280-$CCFF  the overlay area: whichever overlay is in use (2.6K)
 $CD00-$CFFF  C stack (768 bytes)
 $D000-$DFFF  dungeon texts             } in the RAM under the I/O area and KERNAL,
 $E000-$E3FF  screen                    } loaded from DMHI. The video chip uses bank 3
 $E400-$E7BF  creature names, help      } and always sees RAM there. The CPU reads the
 $E7C0-$E7FF  the mouse pointer         } texts and names with the ROMs switched out
 $E800-$EFFF  character set             } (hw.c: hi_read, hi_str).
-$F000-$F7FF  creature sprites          }
+$F000-$F2BF  creature sprites, copied  }
+             in from far memory        }
 $F800-$FFF9  object names              }
-far memory   the 14 level images, about 34K (DMLEV), then the overlays, 10K (DMOVL)
+far memory   the 14 level images, about 34K (DMLEV), the overlays, 10K (DMOVL), and the
+             creatures' sprites, 8.6K (DMSPR)
 ```
 
 Each level image (see the top of `tools/dmconv.py`) holds the level's squares, the start of
@@ -175,11 +187,12 @@ within the level, so the image can be copied in and out of far memory whole. Obj
 picks up move into a separate pool (`dungeon.c`), which is how they cross levels.
 
 Code that's only needed now and then lives in **overlays** (`src/overlay.c`): recruiting,
-the inventory, help and the map, the casting screen, and saving and loading. The linker (`c64-dm64.cfg`)
-builds each to run in the same 2.5K area, the build joins them into DMOVL, and the game keeps
+the inventory, help and the map, the casting screen, and saving and loading. The linker
+(`c64-dm64.cfg`) builds each to run in the same 2.6K area, the build joins them into DMOVL, and
+the game keeps
 them in far memory, copying one into the area when it's called. An overlay can call anything in
 the main program, but nothing in another overlay. A new rarely used feature belongs in one.
-The largest (recruiting) sets the area's size, `__OVLSIZE__` in the config.
+The largest (saving) sets the area's size, `__OVLSIZE__` in the config.
 
 ## Source
 
@@ -187,9 +200,10 @@ The largest (recruiting) sets the area's size, `__OVLSIZE__` in the config.
 | --- | --- |
 | `tools/dmdat.py` | Reads the STX (Pasti) disk image, its FAT12 file system, and `DUNGEON.DAT` |
 | `tools/dmgfx.py` | Unpacks `GRAPHICS.DAT`: object names, the rules tables and the spells |
-| `tools/art.py` | The custom characters and creature sprites (hand-drawn, not DM's) |
+| `tools/dmimg.py` | Decodes DM's pictures and makes the creature sprites |
+| `tools/art.py` | The custom characters and the mouse pointer (hand-drawn) |
 | `tools/text.py` | The game's own help text |
-| `tools/dmconv.py` | Writes `gen/dmdata.c`, `gen/glyphs.h`, `bin/dmlev.bin`, `bin/dmhi.bin` |
+| `tools/dmconv.py` | Writes `gen/dmdata.c`, `gen/glyphs.h` and the DMLEV, DMHI and DMSPR files |
 | `tools/mkdisk.ps1` | Joins the overlays into DMOVL and makes the disk image, keeping saves |
 | `src/main.c` | Start-up, main loop, keys |
 | `src/dungeon.c` | Levels and overlays in far memory, squares, object lists, objects, texts |

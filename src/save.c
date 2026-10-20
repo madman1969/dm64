@@ -2,10 +2,13 @@
 ** save.c - saving and loading the game, in two slots on the game disk (DMSAVE1, DMSAVE2). An
 ** overlay (see overlay in dungeon.c).
 **
-** A save is a header, the champions, the party's objects and the waiting events, then every
-** level image straight from far memory: the levels hold everything else that changes - doors,
-** pits, sensors, texts shown, creatures and where every object lies. About 33K, or 133 blocks.
-** Each part is read and written straight from where it lives, so saving needs no copy of it.
+** A save is a header, the champions, the party's objects and the waiting events, then the image
+** of every level the party has been on, from far memory: the levels hold everything else that
+** changes - doors, pits, sensors, texts shown, creatures, where every object lies, the map.
+** Levels never visited are as on the disk, so they're left out, and loading restores them from
+** DMLEV first. Each level is packed 256 bytes at a time (PackBits: a byte n < 128 is followed by
+** n + 1 bytes as they are, n >= 128 by one byte repeated 257 - n times). A save of every level
+** is about 120 blocks, so both slots fit on the disk.
 */
 
 #include <string.h>
@@ -18,7 +21,7 @@
 #pragma rodata-name (push, "OVL4")
 #pragma data-name (push, "OVL4")
 
-#define SAVE_VERSION 3
+#define SAVE_VERSION 4
 #define DEVICE (*(unsigned char*) 0x00BA < 8 ? 8 : *(unsigned char*) 0x00BA)
 
 typedef struct {
@@ -26,7 +29,7 @@ typedef struct {
     unsigned char version;
     unsigned long levels_total;         /* these levels must be the ones this game was built with */
     unsigned char lev, px, py, pdir, nchamps, nevents;
-    unsigned int held, game_time;
+    unsigned int held, game_time, visited;
 } header_t;
 
 static header_t h;
@@ -37,9 +40,10 @@ static const char magic[4] = { 'D', 'M', '6', '4' };
 static void* const part_ptr[3] = { champ, pool, events };
 static const unsigned int part_size[3] = { sizeof champ, sizeof pool, sizeof events };
 
-/* Disk transfers go through the view's colour buffer: the view is drawn again afterwards. */
+/* Buffers, borrowed from the view (drawn again afterwards): a level's bytes, and the packed. */
 #define BUF      view_cols
-#define BUF_SIZE 256
+#define PACKED   view_chars
+#define CHUNK    256
 
 /* ---- writing files --------------------------------------------------------------------------- */
 
@@ -82,6 +86,79 @@ static unsigned char close_check (void)
     return status[0] == '0' && status[1] == '0';
 }
 
+/* ---- packing --------------------------------------------------------------------------------- */
+
+static unsigned int pack (const unsigned char* s, unsigned int n, unsigned char* d)
+{
+    unsigned int i = 0, o = 0, j, k;
+
+    while (i < n) {
+        for (j = i; j + 1 < n && s[j + 1] == s[i] && j - i < 127; ++j) {
+        }
+        if (j - i >= 2) {                       /* a run of 3 to 128 */
+            d[o++] = 257 - (j - i + 1);
+            d[o++] = s[i];
+            i = j + 1;
+        } else {                                /* bytes as they are, up to the next run */
+            for (k = i; k < n && k - i < 128 && !(k + 2 < n && s[k] == s[k + 1] && s[k] == s[k + 2]); ++k) {
+            }
+            d[o++] = k - i - 1;
+            memcpy (d + o, s + i, k - i);
+            o += k - i;
+            i = k;
+        }
+    }
+    return o;
+}
+
+/* Reading packed bytes from the file, through a buffer. */
+static unsigned char* in_buf = view_chars + CHUNK + 8;
+static unsigned int in_pos, in_len;
+
+static unsigned char next (unsigned char* b)
+{
+    if (in_pos == in_len) {
+        in_len = hw_read (in_buf, CHUNK);
+        in_pos = 0;
+        if (!in_len) {
+            return 0;
+        }
+    }
+    *b = in_buf[in_pos++];
+    return 1;
+}
+
+static unsigned char unpack (unsigned char* d, unsigned int n)
+{
+    unsigned int o = 0, count;
+    unsigned char c, v;
+
+    while (o < n) {
+        if (!next (&c)) {
+            return 0;
+        }
+        count = c < 128 ? c + 1 : 257 - c;
+        if (o + count > n) {
+            return 0;
+        }
+        if (c < 128) {
+            while (count--) {
+                if (!next (&v)) {
+                    return 0;
+                }
+                d[o++] = v;
+            }
+        } else {
+            if (!next (&v)) {
+                return 0;
+            }
+            memset (d + o, v, count);
+            o += count;
+        }
+    }
+    return 1;
+}
+
 /* ---- saving and loading ---------------------------------------------------------------------- */
 
 /* Asks for a slot; 0 if the player backs out. */
@@ -104,21 +181,22 @@ static unsigned char pick_slot (const char* what)
     return 1;
 }
 
-/* Copies a level's image between far memory and the open file, a buffer at a time. */
+/* Writes or reads level l's image, packed, a chunk at a time. */
 static unsigned char copy_level (unsigned char l, unsigned char saving)
 {
     farptr p = level_far_addr (l);
-    unsigned int left = level_size[l], n;
+    unsigned int left = level_size[l], n, packed;
 
     for (; left; left -= n, p += n) {
-        n = left > BUF_SIZE ? BUF_SIZE : left;
+        n = left > CHUNK ? CHUNK : left;
         if (saving) {
             far_read (BUF, p, n);
-            if (put (BUF, n) != n) {
+            packed = pack (BUF, n, PACKED);
+            if (put (PACKED, packed) != packed) {
                 return 0;
             }
         } else {
-            if (hw_read (BUF, n) != n) {
+            if (!unpack (BUF, n)) {
                 return 0;
             }
             far_write (p, BUF, n);
@@ -147,13 +225,16 @@ void ovl_save (void)
     h.nevents = nevents;
     h.held = held;
     h.game_time = game_time;
+    h.visited = levels_visited;
 
     ok = create () && put (&h, sizeof h) == sizeof h;
     for (i = 0; ok && i < 3; ++i) {
         ok = put (part_ptr[i], part_size[i]) == part_size[i];
     }
     for (i = 0; ok && i < NLEVELS; ++i) {
-        ok = copy_level (i, 1);
+        if (levels_visited & (1 << i)) {
+            ok = copy_level (i, 1);
+        }
     }
     ok = close_check () && ok;
     redraw |= REDRAW_VIEW;
@@ -168,6 +249,13 @@ static void damaged (void)
     __asm__ ("jmp $FCE2");
 }
 
+static unsigned char open_save (void)
+{
+    return hw_open (name) && hw_read (&h, sizeof h) == sizeof h &&
+           !memcmp (h.magic, magic, sizeof magic) && h.version == SAVE_VERSION &&
+           h.levels_total == LEVELS_TOTAL;
+}
+
 unsigned char ovl_load (void)
 {
     unsigned char i;
@@ -176,21 +264,25 @@ unsigned char ovl_load (void)
         return 0;
     }
     msg ("LOADING...");
-    if (!hw_open (name) || hw_read (&h, sizeof h) != sizeof h ||
-        memcmp (h.magic, magic, sizeof magic) || h.version != SAVE_VERSION ||
-        h.levels_total != LEVELS_TOTAL) {
+    if (!open_save ()) {
         hw_close ();
         msg ("THERE'S NO SAVED GAME IN THAT SLOT");
         return 0;
     }
-    /* From here on the game is being replaced: a failure leaves none to go back to. */
+    /* From here on the game is being replaced: a failure leaves none to go back to. First
+    ** every level as on the disk (its file needs the drive channel), then the saved ones. */
+    hw_close ();
+    if (!levels_reload () || !open_save ()) {
+        damaged ();
+    }
     for (i = 0; i < 3; ++i) {
         if (hw_read (part_ptr[i], part_size[i]) != part_size[i]) {
             damaged ();
         }
     }
+    in_pos = in_len = 0;
     for (i = 0; i < NLEVELS; ++i) {
-        if (!copy_level (i, 0)) {
+        if ((h.visited & (1 << i)) && !copy_level (i, 0)) {
             damaged ();
         }
     }
@@ -203,6 +295,7 @@ unsigned char ovl_load (void)
     nevents = h.nevents;
     held = h.held;
     game_time = h.game_time;
+    levels_visited = h.visited;
     nproj = 0;
     shield = 0;
     shield_ticks = invisible_ticks = 0;

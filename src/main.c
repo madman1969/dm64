@@ -100,6 +100,7 @@ int main (void)
             creatures_tick ();
             party_tick ();
             magic_tick ();
+            sprites_animate ();
             sound_tick ();
         }
         if (redraw & REDRAW_VIEW) {
