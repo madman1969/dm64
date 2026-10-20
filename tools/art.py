@@ -143,3 +143,124 @@ def pointer_bytes():
         out += int(r.replace('#', '1').replace('.', '0'), 2).to_bytes(3, 'big')
     return bytes(out + b'\0')
 
+
+
+# ---- the bitmap view (phase 2) -------------------------------------------------------------------
+# Its pixels are double-wide, 4 to a character cell, each one of four colours: 0 the background,
+# 1 and 2 the two greys every cell shares, 3 the cell's own colour (see view.c).
+
+# A 3x5 font for writing in the bitmap: on walls (view.c) and the panel's buttons (below).
+TINY = {
+    ' ': '... ... ... ... ...', '!': '.#. .#. .#. ... .#.', '"': '#.# #.# ... ... ...',
+    "'": '.#. .#. ... ... ...', '(': '..# .#. .#. .#. ..#', ')': '#.. .#. .#. .#. #..',
+    ',': '... ... ... .#. #..', '-': '... ... ### ... ...', '.': '... ... ... ... .#.',
+    '/': '..# ..# .#. #.. #..', ':': '... .#. ... .#. ...', '?': '##. ..# .#. ... .#.',
+    '0': '### #.# #.# #.# ###', '1': '.#. ##. .#. .#. ###', '2': '##. ..# .#. #.. ###',
+    '3': '##. ..# .#. ..# ##.', '4': '#.# #.# ### ..# ..#', '5': '### #.. ##. ..# ##.',
+    '6': '.## #.. ### #.# ###', '7': '### ..# .#. .#. .#.', '8': '### #.# ### #.# ###',
+    '9': '### #.# ### ..# ##.',
+    'A': '.#. #.# ### #.# #.#', 'B': '##. #.# ##. #.# ##.', 'C': '.## #.. #.. #.. .##',
+    'D': '##. #.# #.# #.# ##.', 'E': '### #.. ##. #.. ###', 'F': '### #.. ##. #.. #..',
+    'G': '.## #.. #.# #.# .##', 'H': '#.# #.# ### #.# #.#', 'I': '### .#. .#. .#. ###',
+    'J': '..# ..# ..# #.# .#.', 'K': '#.# #.# ##. #.# #.#', 'L': '#.. #.. #.. #.. ###',
+    'M': '#.# ### ### #.# #.#', 'N': '##. #.# #.# #.# #.#', 'O': '.#. #.# #.# #.# .#.',
+    'P': '##. #.# ##. #.. #..', 'Q': '.#. #.# #.# ##. .##', 'R': '##. #.# ##. #.# #.#',
+    'S': '.## #.. .#. ..# ##.', 'T': '### .#. .#. .#. .#.', 'U': '#.# #.# #.# #.# ###',
+    'V': '#.# #.# #.# #.# .#.', 'W': '#.# #.# ### ### #.#', 'X': '#.# #.# .#. #.# #.#',
+    'Y': '#.# #.# .#. .#. .#.', 'Z': '### ..# .#. #.. ###',
+}
+
+
+def tiny_rows(ch):
+    """A character of the tiny font as 8 rows of 4 pixels (on rows 1-5)."""
+    rows = TINY.get(ch, TINY['?']).split()
+    return ['....'] + [r + '.' for r in rows] + ['....'] * 2
+
+
+def cell_mask(rows):
+    """8 rows of 4 pixels ('#' set) as a cell's 8 bytes, each pixel's two bits set."""
+    out = bytearray()
+    for r in rows:
+        b = 0
+        for i, c in enumerate(r):
+            if c != '.':
+                b |= 3 << (6 - 2 * i)
+        out.append(b)
+    return bytes(out)
+
+
+# Small pictures drawn over the view (view.c), in the cell's own colour: the character glyphs
+# above, their pixels paired.
+ICONS = ['BUTTON', 'KEYHOLE', 'TEXT', 'TORCH', 'FACE', 'IT_WEAPON', 'IT_ARMOUR', 'IT_POTION',
+         'IT_SCROLL', 'IT_JUNK', 'IT_FOOD', 'IT_KEY', 'IT_CHEST', 'IT_COIN', 'BALL', 'TELE',
+         'SOLID']
+
+
+def icon_rows(name):
+    rows = dict(GLYPHS)[name]
+    return [''.join('#' if '#' in r[i:i + 2] else '.' for i in range(0, 8, 2)) for r in rows]
+
+
+def bitmap_glyph_bytes():
+    """The tiny font (characters 32-95), then the icons: 8 bytes of mask each."""
+    out = bytearray()
+    for c in range(32, 96):
+        out += cell_mask(tiny_rows(chr(c)))
+    for name in ICONS:
+        out += cell_mask(icon_rows(name))
+    return bytes(out)
+
+
+def icon_defines():
+    return ['#define ICON_%s %d' % (name, 64 + i) for i, name in enumerate(ICONS)]
+
+
+# The panel right of the view: cells 28-39 of rows 0-16, buttons and the movement pad, drawn
+# here once. (columns, rows, width, height in cells; label or arrow), keys in ui.c.
+PANEL_COLS = 12
+PANEL_BUTTONS = [
+    (0, 0, 12, 2, 'CAST'), (0, 2, 6, 2, 'SAVE'), (6, 2, 6, 2, 'LOAD'),
+    (0, 4, 6, 2, 'HELP'), (6, 4, 6, 2, 'MAP'),
+    (0, 13, 4, 2, 'TURN_L'), (4, 13, 4, 2, 'ARROW_U'), (8, 13, 4, 2, 'TURN_R'),
+    (0, 15, 4, 2, 'ARROW_L'), (4, 15, 4, 2, 'ARROW_D'), (8, 15, 4, 2, 'ARROW_R'),
+]
+ARROWS = {
+    'ARROW_U': ['...##...', '..####..', '.######.', '########', '...##...', '...##...', '...##...'],
+    'ARROW_D': ['...##...', '...##...', '...##...', '########', '.######.', '..####..', '...##...'],
+    'ARROW_L': ['...#....', '..##....', '.#######', '########', '.#######', '..##....', '...#....'],
+    'ARROW_R': ['....#...', '....##..', '#######.', '########', '#######.', '....##..', '....#...'],
+    'TURN_L': ['..#.....', '.##.....', '########', '.##....#', '..#....#', '.......#', '.......#'],
+    'TURN_R': ['.....#..', '.....##.', '########', '#....##.', '#....#..', '#.......', '#.......'],
+}
+
+
+def panel_cells():
+    """The panel as {row: 96 bitmap bytes} (pixels 0 background, 1 dark, 2 light, 3 white)."""
+    w, h = PANEL_COLS * 4, 17 * 8
+    px = [[1] * w for _ in range(h)]
+    for cx, cy, cw, ch, what in PANEL_BUTTONS:
+        x0, y0, x1, y1 = cx * 4, cy * 8, (cx + cw) * 4 - 1, (cy + ch) * 8 - 2
+        for y in range(y0, y1 + 1):
+            for x in range(x0, x1 + 1):
+                px[y][x] = 2 if (y == y0 or x == x0) else 0
+        if what in ARROWS:
+            art = ARROWS[what]
+        else:
+            art = [''.join(tiny_rows(c)[1 + r] for c in what) for r in range(5)]
+        aw, ah = len(art[0]), len(art)
+        ox, oy = (x0 + x1 + 1 - aw) // 2, (y0 + y1 + 1 - ah) // 2
+        for y, r in enumerate(art):
+            for x, c in enumerate(r):
+                if c == '#':
+                    px[oy + y][ox + x] = 3
+    rows = {}
+    for cy in range(17):
+        data = bytearray()
+        for cx in range(PANEL_COLS):
+            for y in range(cy * 8, cy * 8 + 8):
+                b = 0
+                for i in range(4):
+                    b |= px[y][cx * 4 + i] << (6 - 2 * i)
+                data.append(b)
+        rows[cy] = bytes(data)
+    return rows

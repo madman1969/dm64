@@ -27,14 +27,17 @@ static void pair (unsigned char x, unsigned char y, unsigned char col, const cha
     ui_print (x + 7, y, COLOR_WHITE, ui_num (max, 3));
 }
 
+/* The slots in two columns: the body's, then the pack. */
+#define SLOT_X(s) ((s) < SL_PACK ? 0 : 20)
+#define SLOT_Y(s) (8 + ((s) < SL_PACK ? (s) : (s) - SL_PACK))
+
 static void inventory_draw (unsigned char who)
 {
     champion_t* c = &champ[who];
-    unsigned char i;
+    unsigned char i, x, y;
     char letter[2];
 
-    sprites_off ();
-    ui_clear (0, 0, VIEW_W, VIEW_H);
+    ui_clear (0, 0, 40, VIEW_H);
     ui_print (0, 0, COLOR_WHITE, c->name);
     ui_print (8, 0, COLOR_GRAY3, c->title);
     pair (0, 1, COLOR_LIGHTGREEN, "HP", c->hp, c->maxhp);
@@ -54,10 +57,14 @@ static void inventory_draw (unsigned char who)
     ui_print (16, 6, COLOR_LIGHTGREEN, "[BACK]");
     letter[1] = 0;
     for (i = 0; i < NSLOTS; ++i) {
+        x = SLOT_X (i);
+        y = SLOT_Y (i);
         letter[0] = 'A' + i;
-        ui_print (0, 7 + i, COLOR_YELLOW, letter);
-        ui_print (2, 7 + i, COLOR_GRAY2, slot_names[i]);
-        ui_print (9, 7 + i, COLOR_WHITE, c->slot[i] == NONE ? "-" : obj_name (c->slot[i]));
+        ui_print (x, y, COLOR_YELLOW, letter);
+        ui_print (x + 2, y, COLOR_GRAY2, slot_names[i]);
+        ui_limit = x + 20;
+        ui_print (x + 9, y, COLOR_WHITE, c->slot[i] == NONE ? "-" : obj_name (c->slot[i]));
+        ui_limit = 40;
     }
     panel_draw ();
 }
@@ -78,7 +85,7 @@ void ovl_inventory (unsigned char who)
     msg ("I OR SPACE: BACK TO THE DUNGEON");
     zones_clear ();
     for (s = 0; s < NSLOTS; ++s) {
-        zone (0, 7 + s, VIEW_W, 1, 'a' + s);
+        zone (SLOT_X (s), SLOT_Y (s), 20, 1, 'a' + s);
     }
     zone (0, 6, 11, 1, 'e');
     zone (16, 6, 6, 1, 'i');
@@ -117,7 +124,6 @@ void ovl_map (void)
     unsigned char x, y, top, left, s, ch, col;
     unsigned int t;
 
-    sprites_off ();
     ui_clear (0, 0, 40, VIEW_H);
     left = (40 - lw) / 2;
     top = 0;
@@ -195,8 +201,7 @@ void ovl_help (void)
 {
     unsigned char i;
 
-    sprites_off ();
-    ui_clear (0, 0, VIEW_W, VIEW_H);
+    ui_clear (0, 0, 40, 22);
     ui_print (2, 0, COLOR_WHITE, "DUNGEON MASTER 64");
     for (i = 0; i < NHELP; ++i) {
         ui_print (0, 2 + i, COLOR_GRAY3, hi_str (help_line_at[i]));

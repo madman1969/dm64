@@ -19,7 +19,7 @@
     "+drive8truedrive",
     "-virtualdev8",
     "-8",
-    "bin/dm64.d64"
+    "bin/dm64.d81"
   ],
   "UseOpt6502": false,
   "Opt6502Mode": "Size",
@@ -35,10 +35,14 @@
     "src/magic.c",
     "src/overlay.c",
     "src/mouse.s",
+    "src/irq.s",
+    "src/bitmap.s",
     "src/recruit.c",
     "src/screens.c",
     "src/cast.c",
     "src/save.c",
+    "src/unpack.c",
+    "src/unpackasm.s",
     "gen/dmdata.c"
   ],
   "OutputFile": "bin/dm64.prg",

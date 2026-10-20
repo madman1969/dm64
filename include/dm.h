@@ -58,15 +58,17 @@ enum { E_WALL, E_FLOOR, E_PIT, E_STAIRS, E_DOOR, E_TELE, E_FAKE };
 #define SENS_CELL(s)     ((unsigned char) ((s)[3] >> 4) & 3)
 enum { EFF_SET, EFF_CLEAR, EFF_TOGGLE, EFF_HOLD };
 
-/* Screen layout: the 3D view on the left, the party on the right, messages below. */
-#define VIEW_W   24
-#define VIEW_H   22
+/* Screen layout: rows 0-16 a bitmap, the 3D view on the left and buttons beside it; rows
+** 17-24 text, the party and messages (ui.c). */
+#define VIEW_W   28
+#define VIEW_H   17
 #define SCREEN   ((unsigned char*) 0xCC00)
 #define COLOUR   ((unsigned char*) 0xD800)
 
 /* ---- hw.c ---- */
-extern unsigned char view_chars[VIEW_W * VIEW_H];   /* the view is drawn here, then shown */
-extern unsigned char view_cols[VIEW_W * VIEW_H];
+#define VIEW_BUF 512
+extern unsigned char view_chars[VIEW_BUF];  /* buffers for drawing the view */
+extern unsigned char view_cols[VIEW_BUF];
 unsigned char hw_load_data (void);
 unsigned char hw_open (const char* name);
 unsigned int hw_read (void* buf, unsigned int len);
@@ -97,6 +99,7 @@ unsigned char dungeon_init (void);
 void overlay (unsigned char n);             /* copy overlay n in from far memory (overlay.c) */
 void sprite_fetch (unsigned char type, unsigned int offset, void* dst, unsigned int len);
 void far_text (void* dst, unsigned int offset, unsigned int len);
+void far_wall (void* dst, unsigned long offset, unsigned int len);  /* from DMWAL */
 void level_flush (void);                    /* the party's level back to far memory */
 unsigned char levels_reload (void);         /* every level as on the disk again */
 extern unsigned int levels_visited;         /* bit n: level n has been entered (saving) */
@@ -126,6 +129,14 @@ const char* text_decode (unsigned int offset);  /* a dungeon text, '\n' between 
 unsigned char passable (unsigned char x, unsigned char y);
 unsigned char face_cell (void);             /* the side of the wall ahead that faces us */
 
+/* ---- irq.s, bitmap.s: the split screen, and drawing into its bitmap ---- */
+void irq_vectors (void);                    /* first thing: see irq.s */
+void irq_init (void);
+extern unsigned char split_on;              /* 0: all text */
+void __fastcall__ blit_row (const unsigned char* row);
+void __fastcall__ stamp (unsigned char glyph);
+extern unsigned char bm_col, bm_row, bm_ink, bm_colour;
+
 /* ---- view.c ---- */
 void view_draw (void);
 void sprites_off (void);
@@ -134,6 +145,9 @@ extern unsigned char creature_flash;        /* ticks the creature ahead shows wh
 
 /* ---- ui.c ---- */
 void ui_init (void);
+void screen_view (void);                    /* the bitmap view above the text */
+void screen_text (void);                    /* all text, for the inventory and such */
+extern unsigned char ui_limit;              /* ui_print stops short of this column */
 unsigned char scr_code (unsigned char c);
 void msg (const char* s);
 void msg_text (const char* s);              /* a multi-line dungeon text */
@@ -240,6 +254,8 @@ void ovl_map (void);
 void ovl_cast (void);
 void ovl_save (void);
 unsigned char ovl_load (void);
+unsigned char ovl_unpack (const char* name, unsigned long dst, unsigned long size,
+                          unsigned char* buf);  /* unpack.c, in overlay 2 */
 
 extern unsigned int game_time;
 

@@ -54,7 +54,7 @@ unsigned int pool[POOL_SIZE][2];
 extern unsigned char _OVL1_START__[], _OVL1_SIZE__[];
 #define OVL_START ((void*) _OVL1_START__)
 #define OVL_SIZE ((unsigned int) _OVL1_SIZE__)
-static farptr overlay_far, sprites_far, text_far;
+static farptr overlay_far, sprites_far, text_far, wall_far;
 static unsigned char overlay_in = 255;
 
 void overlay (unsigned char n)
@@ -85,8 +85,8 @@ static farptr load_far (const char* name, farptr p, unsigned long size)
     return p;
 }
 
-/* Puts the level images (DMLEV), overlays (DMOVL), creature sprites (DMSPR) and texts (DMTXT)
-** in far memory, one after another, past the few bytes FarMem's allocator keeps at the start
+/* Puts the level images (DMLEV), overlays (DMOVL), creature sprites (DMSPR), texts (DMTXT) and
+** the view's pieces (DMWAL, unpacked as it loads: unpack.c) in far memory, one after another, past the few bytes FarMem's allocator keeps at the start
 ** (unused here). Returns 0 if they don't fit, or can't be read. */
 unsigned char dungeon_init (void)
 {
@@ -98,7 +98,7 @@ unsigned char dungeon_init (void)
     }
     if (far_init () <= FAR_NEAR ||
         far_size () < p + LEVELS_TOTAL + (unsigned long) NOVERLAYS * OVL_SIZE + SPRITES_TOTAL +
-        TXT_TOTAL) {
+        TXT_TOTAL + WAL_TOTAL) {
         return 0;
     }
     for (l = 0; l < NLEVELS; ++l) {
@@ -111,7 +111,18 @@ unsigned char dungeon_init (void)
     }
     sprites_far = load_far ("dmovl", overlay_far, (unsigned long) NOVERLAYS * OVL_SIZE);
     text_far = sprites_far ? load_far ("dmspr", sprites_far, SPRITES_TOTAL) : 0;
-    return text_far && load_far ("dmtxt", text_far, TXT_TOTAL);
+    wall_far = text_far ? load_far ("dmtxt", text_far, TXT_TOTAL) : 0;
+    if (!wall_far) {
+        return 0;
+    }
+    overlay (2);
+    return ovl_unpack ("dmwal", wall_far, WAL_TOTAL, level_buf);
+}
+
+/* Reads from DMWAL in far memory: the pieces the view is drawn from. */
+void far_wall (void* dst, unsigned long offset, unsigned int len)
+{
+    far_read (dst, wall_far + offset, len);
 }
 
 /* Reads from DMTXT in far memory: the dungeon's texts, object names and our own strings. */

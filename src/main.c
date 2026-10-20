@@ -61,6 +61,7 @@ int main (void)
 {
     unsigned char last, k;
 
+    irq_vectors ();
     cbm_k_bsout (147);
     say ("DUNGEON MASTER 64");
     say ("");
@@ -71,7 +72,7 @@ int main (void)
     }
     if (!dungeon_init ()) {
         say ("THIS GAME NEEDS A RAM EXPANSION:");
-        say ("AN REU (128K OR MORE) OR A SUPERCPU.");
+        say ("AN REU (256K OR MORE) OR A SUPERCPU.");
         return 1;
     }
     hw_init ();

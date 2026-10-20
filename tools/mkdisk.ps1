@@ -1,4 +1,4 @@
-# Makes bin\dm64.d64 from the linked program: joins the overlays (bin\dm64.prg.1 to .4, each
+# Makes bin\dm64.d81 from the linked program: joins the overlays (bin\dm64.prg.1 to .4, each
 # padded to the overlay size in c64-dm64.cfg) into DMOVL, then writes the program and its data
 # files to a fresh disk image, keeping any saved games from the old one.
 #
@@ -25,15 +25,22 @@ foreach ($n in 1..4) {
 # Saved games on the old disk image survive: copied off, and back onto the new one.
 New-Item -ItemType Directory -Force obj | Out-Null
 $saves = @()
-if (Test-Path bin\dm64.d64) {
+# (A 1581 disk: a 1541's is too small for the data and two saved games. Saves on an older
+# bin\dm64.d64 are carried over too.)
+$old = if (Test-Path bin\dm64.d81) { "bin\dm64.d81" } elseif (Test-Path bin\dm64.d64) { "bin\dm64.d64" }
+if ($old) {
     foreach ($slot in "dmsave1", "dmsave2") {
         Remove-Item "obj\$slot" -ErrorAction SilentlyContinue
-        & "$Vice\c1541.exe" -attach bin\dm64.d64 -read $slot "obj\$slot" 2>&1 | Out-Null
+        & "$Vice\c1541.exe" -attach $old -read $slot "obj\$slot" 2>&1 | Out-Null
         if (Test-Path "obj\$slot") { $saves += "-write", "obj\$slot", $slot }
     }
 }
-& "$Vice\c1541.exe" -format "dungeon master,64" d64 bin\dm64.d64 `
+# Made apart first, so a failure leaves the old image (and its saves) as it was.
+Remove-Item obj\dm64.d81 -ErrorAction SilentlyContinue
+& "$Vice\c1541.exe" -format "dungeon master,64" d81 obj\dm64.d81 `
     -write bin\dm64.prg dm64 -write bin\dmhi.bin dmhi -write bin\dmlev.bin dmlev `
-    -write bin\dmovl.bin dmovl -write bin\dmspr.bin dmspr -write bin\dmtxt.bin dmtxt @saves | Out-Null
+    -write bin\dmovl.bin dmovl -write bin\dmspr.bin dmspr -write bin\dmtxt.bin dmtxt `
+    -write bin\dmwal.bin dmwal @saves 2>&1 | Out-Null
 if ($LASTEXITCODE) { throw "c1541 failed" }
+Move-Item -Force obj\dm64.d81 bin\dm64.d81
 if ($saves) { Write-Host "Kept saved games:" ($saves | Where-Object { $_ -like "dmsave*" }) }

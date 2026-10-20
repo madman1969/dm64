@@ -4,11 +4,11 @@
 ** Memory map while the game runs (the video chip uses bank 3, $C000-$FFFF):
 **   $0400-$07FF  buffers (the default screen's RAM, free once the screen moves)
 **   $0801-$CBFF  the program, the party's level, overlays and the C stack
-**   $CC00-$CFFF  the screen
+**   $CC00-$CFFF  the screen; its top 17 rows are the bitmap's colours (irq.s)
 **   $D000-$D3FF  the character set   } in the RAM under the I/O area, which the video chip
 **   $D400-$D6FF  sprites             } always sees; the CPU writes there with I/O switched
-**   $D800-$DBFF  the bitmap view's colours (to come)   } out (hi_read)
-**   $E000-$FF3F  the bitmap view (to come), in the RAM under the KERNAL
+**   $D800-$DA87  the bitmap's font and icons   } out (hi_read)
+**   $E000-$FF3F  the bitmap (rows 0-16 used), in the RAM under the KERNAL
 ** The dungeon's texts, object names and our own strings are in far memory (DMTXT).
 */
 
@@ -18,9 +18,9 @@
 #include "dm.h"
 
 #pragma bss-name (push, "LOWBSS")
-unsigned char view_chars[VIEW_W * VIEW_H];
+unsigned char view_chars[VIEW_BUF];
 #pragma bss-name (pop)
-unsigned char view_cols[VIEW_W * VIEW_H];
+unsigned char view_cols[VIEW_BUF];
 
 #define CPU_PORT   (*(unsigned char*) 0x0001)
 #define CHARSET    ((unsigned char*) 0xD000)
@@ -28,18 +28,16 @@ unsigned char view_cols[VIEW_W * VIEW_H];
 #define CASE_LOCK  (*(unsigned char*) 0x0291)
 #define LAST_DEVICE (*(unsigned char*) 0x00BA)
 
-/* Copies with every ROM and the I/O area switched out, so all 64K is RAM; interrupts are off
-** meanwhile, as their handler needs the KERNAL. Writes need no switching (they always reach the
-** RAM under a ROM), except under the I/O area: hi_read is used for those too. */
+/* Copies with every ROM and the I/O area switched out, so all 64K is RAM (interrupts go on:
+** irq.s). Writes need no switching (they always reach the RAM under a ROM), except under the
+** I/O area: hi_read is used for those too. */
 void hi_read (void* dst, unsigned src, unsigned len)
 {
     unsigned char port = CPU_PORT;
 
-    __asm__ ("sei");
     CPU_PORT = 0x34;
     memcpy (dst, (void*) src, len);
     CPU_PORT = port;
-    __asm__ ("cli");
 }
 
 /* One of our own strings (creature names, help) from DMTXT, until the next. */
@@ -136,6 +134,7 @@ void hw_init (void)
     VIC.spr_ena = 0;
     VIC.spr7_color = COLOR_WHITE;
     SCREEN[0x3FF] = (HI_POINTER - 0xC000) / 64;
+    irq_init ();
 
     SID.amp = 0x0F;
     SID.v1.ad = 0x09;

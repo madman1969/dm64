@@ -2,9 +2,12 @@
 ** ui.c - everything around the view: messages, the party panel, and input from the keyboard and
 ** a mouse (or a joystick moving a pointer).
 **
-**   columns 0-23, rows 0-21   the 3D view (view.c), or the inventory and text boxes
-**   columns 25-39, rows 0-21  the party, what's in hand, and buttons
-**   rows 22-24                messages
+**   rows 0-16    a bitmap (irq.s): the 3D view in columns 0-27 (view.c), and beside it
+**                buttons and the movement pad (drawn by art.py); or, all text, the inventory,
+**                the map, help and recruiting
+**   rows 17-19   the party, ten columns each: name, bars, what's in hand
+**   row 20       the level, the way the party faces, what's in hand, what's on the floor
+**   rows 22-24   messages
 **
 ** Clicks become keys: each screen lists the zones that can be clicked and the key each stands
 ** for, so the code reading keys works the same with a mouse.
@@ -16,10 +19,12 @@
 #include <mouse.h>
 #include "dm.h"
 
-#define PANEL_X 25
-#define MSG_Y   22
+#define PARTY_Y  17
+#define STATUS_Y 20
+#define MSG_Y    22
 
 unsigned char redraw;
+unsigned char ui_limit = 40;
 
 /* Screen codes for text. The program's own upper-case strings arrive as PETSCII's shifted
 ** letters ($C1-$DA, as cc65 translates them); names and texts from the game as plain ASCII. */
@@ -45,7 +50,7 @@ void ui_print (unsigned char x, unsigned char y, unsigned char col, const char* 
 {
     unsigned int p = y * 40 + x;
 
-    while (*s && x < 40) {
+    while (*s && x < ui_limit) {
         SCREEN[p] = scr_code (*s++);
         COLOUR[p++] = col;
         ++x;
@@ -101,13 +106,13 @@ void zone (unsigned char x, unsigned char y, unsigned char w, unsigned char h, u
     }
 }
 
-/* Each champion's name and bars in the panel, as keys first, first + 1... */
+/* Each champion, as keys first, first + 1... */
 void zone_champions (unsigned char first)
 {
     unsigned char i;
 
     for (i = 0; i < nchamps; ++i) {
-        zone (PANEL_X, 2 + i * 4, 15, 2, first + i);
+        zone (i * 10, PARTY_Y, 10, 3, first + i);
     }
 }
 
@@ -172,27 +177,49 @@ void mouse_cycle (void)
     msg (mouse_mode == 0 ? "MOUSE OFF" : mouse_mode == 1 ? "MOUSE IN PORT 1" : "JOYSTICK POINTER IN PORT 2");
 }
 
-/* The dungeon's own zones: the view, the champions, and the buttons under them. */
+/* The dungeon's own zones: the view, the buttons beside it (art.py's PANEL_BUTTONS), the
+** champions and the status line. */
 void main_zones (void)
 {
-    static const unsigned char buttons[11][3] = {
-        { 25, 19, 'q' }, { 28, 19, 'w' }, { 31, 19, 'e' },
-        { 25, 20, 'a' }, { 28, 20, 's' }, { 31, 20, 'd' },
-        { 35, 19, 'c' }, { 35, 20, 133 }, { 35, 21, 134 }, { 25, 21, 'h' }, { 30, 21, 'p' }
+    static const unsigned char buttons[11][4] = {
+        { 28, 0, 12, 'c' }, { 28, 2, 6, 133 }, { 34, 2, 6, 134 }, { 28, 4, 6, 'h' },
+        { 34, 4, 6, 'p' }, { 28, 13, 4, 'q' }, { 32, 13, 4, 'w' }, { 36, 13, 4, 'e' },
+        { 28, 15, 4, 'a' }, { 32, 15, 4, 's' }, { 36, 15, 4, 'd' }
     };
     unsigned char i;
 
     zones_clear ();
-    zone (0, 17, VIEW_W, 5, KEY_FLOOR);        /* the floor ahead: take or put down */
-    zone (0, 0, VIEW_W, 17, ' ');              /* the wall or door ahead: press it */
-    zone_champions (KEY_INVENTORY);
-    for (i = 0; i < nchamps; ++i) {
-        zone (PANEL_X, 4 + i * 4, 15, 1, '1' + i);  /* their hand: attack */
-    }
-    zone (PANEL_X, 17, 15, 2, KEY_FLOOR);
+    zone (0, 11, VIEW_W, 6, KEY_FLOOR);        /* the floor ahead: take or put down */
+    zone (0, 0, VIEW_W, 11, ' ');              /* the wall or door ahead: press it */
     for (i = 0; i < 11; ++i) {
-        zone (buttons[i][0], buttons[i][1], i < 6 ? 3 : 4, 1, buttons[i][2]);
+        zone (buttons[i][0], buttons[i][1], buttons[i][2], 2, buttons[i][3]);
     }
+    for (i = 0; i < nchamps; ++i) {
+        zone (i * 10, PARTY_Y, 10, 2, KEY_INVENTORY + i);
+        zone (i * 10, PARTY_Y + 2, 10, 1, '1' + i);     /* their hand: attack */
+    }
+    zone (10, STATUS_Y, 30, 1, KEY_FLOOR);
+}
+
+/* The split screen: the top 17 rows' memory is the bitmap's colours (two greys in every cell;
+** the panel's own colour white, the view's set as it's drawn). */
+void screen_view (void)
+{
+    unsigned char y;
+
+    memset (SCREEN, 0xBF, VIEW_H * 40);
+    for (y = 0; y < VIEW_H; ++y) {
+        memset (COLOUR + y * 40 + VIEW_W, COLOR_WHITE, 40 - VIEW_W);
+    }
+    split_on = 1;
+    redraw = REDRAW_VIEW | REDRAW_PANEL;
+}
+
+void screen_text (void)
+{
+    split_on = 0;
+    sprites_off ();
+    ui_clear (0, 0, 40, VIEW_H);
 }
 
 /* ---- messages --------------------------------------------------------------------------------- */
@@ -238,15 +265,15 @@ void msg_text (const char* s)
 
 /* ---- the party panel ------------------------------------------------------------------------- */
 
-/* A bar of 4 characters, 32 steps, for value out of max. */
+/* A bar of 3 characters, 24 steps, for value out of max. */
 static void bar (unsigned char x, unsigned char y, int value, int max, unsigned char col)
 {
     unsigned char filled, i, n;
 
     if (value < 0) value = 0;
-    filled = max ? (unsigned char) (((unsigned long) value * 32) / max) : 0;
-    if (filled > 32) filled = 32;
-    for (i = 0; i < 4; ++i) {
+    filled = max ? (unsigned char) (((unsigned long) value * 24) / max) : 0;
+    if (filled > 24) filled = 24;
+    for (i = 0; i < 3; ++i) {
         n = filled > 8 ? 8 : filled;
         filled -= n;
         ui_glyph (x + i, y, G_BAR0 + n, col);
@@ -254,49 +281,48 @@ static void bar (unsigned char x, unsigned char y, int value, int max, unsigned 
 }
 
 static const char dir_letter[4] = { 'N', 'E', 'S', 'W' };
-static const unsigned char pad_glyph[6] = {
-    G_TURN_L, G_ARROW_U, G_TURN_R, G_ARROW_L, G_ARROW_D, G_ARROW_R
-};
 
 void panel_draw (void)
 {
-    unsigned char i, y;
+    unsigned char i, x;
     champion_t* c;
     unsigned int t;
     char d[2];
 
-    ui_clear (PANEL_X, 0, 15, VIEW_H);
-    ui_print (PANEL_X, 0, COLOR_GRAY3, "LEVEL");
-    ui_print (PANEL_X + 6, 0, COLOR_WHITE, ui_num (levels[lev].depth + 1, 2));
-    d[0] = dir_letter[pdir];
+    ui_clear (0, PARTY_Y, 40, 4);
     d[1] = 0;
-    ui_print (PANEL_X + 10, 0, COLOR_GRAY3, "FACE");
-    ui_print (PANEL_X + 14, 0, COLOR_WHITE, d);
-
     for (i = 0; i < 4; ++i) {
-        y = 2 + i * 4;
+        x = i * 10;
         if (i >= nchamps) {
-            ui_print (PANEL_X, y, COLOR_GRAY1, "- EMPTY -");
+            ui_print (x, PARTY_Y, COLOR_GRAY1, "- EMPTY -");
             continue;
         }
         c = &champ[i];
         d[0] = '1' + i;
-        ui_print (PANEL_X, y, COLOR_GRAY2, d);
-        ui_print (PANEL_X + 2, y, c->hp > 0 ? (c->cooldown ? COLOR_GRAY2 : COLOR_WHITE) : COLOR_RED,
+        ui_print (x, PARTY_Y, COLOR_GRAY2, d);
+        ui_limit = x + 9;
+        ui_print (x + 2, PARTY_Y, c->hp > 0 ? (c->cooldown ? COLOR_GRAY2 : COLOR_WHITE) : COLOR_RED,
                   c->name);
         if (c->hp <= 0) {
-            ui_print (PANEL_X + 10, y, COLOR_RED, "DEAD");
-            continue;
+            ui_print (x, PARTY_Y + 1, COLOR_RED, "DEAD");
+        } else {
+            bar (x, PARTY_Y + 1, c->hp, c->maxhp, COLOR_LIGHTGREEN);
+            bar (x + 3, PARTY_Y + 1, c->sta, c->maxsta, COLOR_YELLOW);
+            bar (x + 6, PARTY_Y + 1, c->mana, c->maxmana, COLOR_LIGHTBLUE);
+            t = c->slot[SL_ACTION];
+            ui_print (x, PARTY_Y + 2, COLOR_GRAY2, t == NONE ? "-" : obj_name (t));
         }
-        bar (PANEL_X, y + 1, c->hp, c->maxhp, COLOR_LIGHTGREEN);
-        bar (PANEL_X + 5, y + 1, c->sta, c->maxsta, COLOR_YELLOW);
-        bar (PANEL_X + 10, y + 1, c->mana, c->maxmana, COLOR_LIGHTBLUE);
-        t = c->slot[SL_ACTION];
-        ui_print (PANEL_X, y + 2, COLOR_GRAY2, t == NONE ? "(EMPTY HAND)" : obj_name (t));
+        ui_limit = 40;
     }
 
-    ui_print (PANEL_X, 17, COLOR_GRAY3, "HAND");
-    ui_print (PANEL_X + 5, 17, COLOR_YELLOW, held == NONE ? "-" : obj_name (held));
+    ui_print (0, STATUS_Y, COLOR_GRAY3, "LEVEL");
+    ui_print (6, STATUS_Y, COLOR_WHITE, ui_num (levels[lev].depth + 1, 2));
+    d[0] = dir_letter[pdir];
+    ui_print (9, STATUS_Y, COLOR_WHITE, d);
+    ui_print (11, STATUS_Y, COLOR_GRAY3, "HAND");
+    ui_limit = 30;
+    ui_print (16, STATUS_Y, COLOR_YELLOW, held == NONE ? "-" : obj_name (held));
+    ui_limit = 40;
     t = first_thing (px, py);
     for (i = 0; t != END; t = NEXT (t)) {
         if (TH_TYPE (t) >= T_WEAPON) {
@@ -304,24 +330,14 @@ void panel_draw (void)
         }
     }
     if (i) {
-        ui_print (PANEL_X, 18, COLOR_GRAY2, ui_num (i, 2));
-        ui_print (PANEL_X + 3, 18, COLOR_GRAY2, "ON FLOOR");
+        ui_print (29, STATUS_Y, COLOR_GRAY2, ui_num (i, 2));
+        ui_print (31, STATUS_Y, COLOR_GRAY2, " ON FLOOR");
     }
-
-    /* The movement pad (turn, forward, turn / left, back, right) and buttons. */
-    for (i = 0; i < 6; ++i) {
-        ui_glyph (PANEL_X + 1 + (i % 3) * 3, 19 + i / 3, pad_glyph[i], COLOR_WHITE);
-    }
-    ui_print (35, 19, COLOR_LIGHTBLUE, "CAST");
-    ui_print (35, 20, COLOR_LIGHTGREEN, "SAVE");
-    ui_print (35, 21, COLOR_LIGHTGREEN, "LOAD");
-    ui_print (PANEL_X, 21, COLOR_GRAY2, "HELP");
-    ui_print (30, 21, COLOR_GRAY3, "MAP");
 }
 
 void ui_init (void)
 {
     ui_clear (0, 0, 40, 25);
+    screen_view ();
     main_zones ();
-    redraw = REDRAW_VIEW | REDRAW_PANEL;
 }

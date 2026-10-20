@@ -4,10 +4,11 @@
 **
 **   overlay 0  recruit.c   champions from the mirrors
 **   overlay 1  screens.c   the inventory, help and the map
-**   overlay 2  cast.c      casting spells
+**   overlay 2  cast.c      casting spells; unpack.c, DMWAL as the game starts
 **   overlay 3  save.c      saving and loading
 **
-** An overlay may call anything here in ordinary memory, but nothing in another overlay.
+** An overlay may call anything here in ordinary memory, but nothing in another overlay. The
+** screens that cover the view switch the whole screen to text while they're up.
 */
 
 #include "dm.h"
@@ -15,28 +16,36 @@
 void recruit (void)
 {
     overlay (0);
+    screen_text ();
     ovl_recruit ();
+    screen_view ();
     main_zones ();
 }
 
 void inventory (unsigned char who)
 {
     overlay (1);
+    screen_text ();
     ovl_inventory (who);
+    screen_view ();
     main_zones ();
 }
 
 void help (void)
 {
     overlay (1);
+    screen_text ();
     ovl_help ();
+    screen_view ();
     main_zones ();
 }
 
 void map (void)
 {
     overlay (1);
+    screen_text ();
     ovl_map ();
+    screen_view ();
     main_zones ();
 }
 
