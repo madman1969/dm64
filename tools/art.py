@@ -3,8 +3,9 @@ from, and the mouse pointer (the creatures are DM's own pictures: dmimg.py). Run
 which writes them into the DMHI data file (loaded into the RAM under the KERNAL) and their
 character codes into glyphs.h."""
 
-# Character codes 128 and up are replaced; 0-127 keep the C64's own upper-case set for text.
-FIRST_GLYPH = 128
+# The character set is 128 characters: codes 0-63 the C64's own upper-case letters, digits and
+# punctuation, for text, and 64-127 these glyphs.
+FIRST_GLYPH = 64
 
 GLYPHS = [
     ('SOLID', ['########'] * 8),

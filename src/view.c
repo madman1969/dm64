@@ -43,6 +43,7 @@ static unsigned char sight;         /* how far ahead the party can see: the firs
 #define SMALL_BLOCK (BIG_BLOCK + 8)
 static unsigned char nsmall, small_x[MAXSMALL], small_y[MAXSMALL], small_type[MAXSMALL];
 static unsigned char big_loaded = 255, small_loaded[MAXSMALL] = { 255, 255, 255 };
+static unsigned char small_buf[64];
 unsigned char creature_flash;
 
 static void fill (signed char x0, signed char y0, signed char x1, signed char y1)
@@ -232,18 +233,12 @@ static void ornament (signed char k)
         if (k == 1) {
             fc = ' ';
             fill (9, 7, 15, 14);
-            put (9, 7, 112, COLOR_LIGHTBLUE);
-            put (14, 7, 110, COLOR_LIGHTBLUE);
-            put (9, 13, 109, COLOR_LIGHTBLUE);
-            put (14, 13, 125, COLOR_LIGHTBLUE);
-            for (y = 10; y < 14; ++y) {
-                put (y, 7, 64, COLOR_LIGHTBLUE);
-                put (y, 13, 64, COLOR_LIGHTBLUE);
-            }
-            for (y = 8; y < 13; ++y) {
-                put (9, y, 93, COLOR_LIGHTBLUE);
-                put (14, y, 93, COLOR_LIGHTBLUE);
-            }
+            fc = G_SOLID;                   /* the frame */
+            fcol = COLOR_LIGHTBLUE;
+            fill (9, 7, 15, 8);
+            fill (9, 13, 15, 14);
+            fill (9, 8, 10, 13);
+            fill (14, 8, 15, 13);
             put (11, 10, G_FACE, COLOR_LIGHTRED);
             put (12, 10, G_FACE, COLOR_LIGHTRED);
         } else {
@@ -442,7 +437,8 @@ static unsigned char place_small (void)
         view_chars[p] = small_y[i] < CY ? ' ' : G_FLOOR;
         view_cols[p] = COLOR_GRAY1;
         if (small_loaded[n] != small_type[i]) {
-            sprite_fetch (small_type[i], 256, (void*) (HI_SPRITES + 512 + n * 64), 64);
+            sprite_fetch (small_type[i], 256, small_buf, 64);
+            hi_read ((void*) (HI_SPRITES + 512 + n * 64), (unsigned) small_buf, 64);
             small_loaded[n] = small_type[i];
         }
         ptrs[4 + n] = SMALL_BLOCK + n;
@@ -467,13 +463,11 @@ static unsigned char mirror (unsigned char b)
 static void load_big (void)
 {
     unsigned char* src = view_cols;
-    unsigned char* front = (unsigned char*) HI_SPRITES;
-    unsigned char* back = front + 256;
+    unsigned char* back = view_chars;
     unsigned char half, row, b;
     unsigned int l, r;
 
     sprite_fetch (sprite_type, 0, src, 256);
-    memcpy (front, src, 256);
     for (half = 0; half < 2; ++half) {          /* top blocks, then bottom */
         for (row = 0; row < 21; ++row) {
             l = half * 128 + row * 3;           /* left block's row; the right's is 64 on */
@@ -484,6 +478,9 @@ static void load_big (void)
             }
         }
     }
+    /* The sprite area is under the I/O area: copied there with it switched out. */
+    hi_read ((void*) HI_SPRITES, (unsigned) src, 256);
+    hi_read ((void*) (HI_SPRITES + 256), (unsigned) back, 256);
     big_loaded = sprite_type;
 }
 

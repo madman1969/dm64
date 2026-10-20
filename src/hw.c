@@ -1,15 +1,15 @@
 /*
 ** hw.c - the C64 itself: the video bank, the RAM under the ROMs, the data file, and sound.
 **
-** Memory map while the game runs:
+** Memory map while the game runs (the video chip uses bank 3, $C000-$FFFF):
 **   $0400-$07FF  buffers (the default screen's RAM, free once the screen moves)
-**   $0801-$CFFF  the program and the dungeon
-**   $D000-$DFFF  the dungeon's texts, in the RAM under the I/O area
-**   $E000-$E3FF  the screen         } in the RAM under the KERNAL, which the video chip
-**   $E800-$EFFF  the character set  } always sees: video bank 3
-**   $F000-$F7FF  creature sprites   }
-**   $F800-$FFF9  object names       }
-** The texts and names are read with the ROMs and I/O switched out (hi_read).
+**   $0801-$CBFF  the program, the party's level, overlays and the C stack
+**   $CC00-$CFFF  the screen
+**   $D000-$D3FF  the character set   } in the RAM under the I/O area, which the video chip
+**   $D400-$D6FF  sprites             } always sees; the CPU writes there with I/O switched
+**   $D800-$DBFF  the bitmap view's colours (to come)   } out (hi_read)
+**   $E000-$FF3F  the bitmap view (to come), in the RAM under the KERNAL
+** The dungeon's texts, object names and our own strings are in far memory (DMTXT).
 */
 
 #include <string.h>
@@ -23,8 +23,7 @@ unsigned char view_chars[VIEW_W * VIEW_H];
 unsigned char view_cols[VIEW_W * VIEW_H];
 
 #define CPU_PORT   (*(unsigned char*) 0x0001)
-#define CHARSET    ((unsigned char*) 0xE800)
-#define CHAR_ROM   ((unsigned char*) 0xD000)
+#define CHARSET    ((unsigned char*) 0xD000)
 #define HIBASE     (*(unsigned char*) 0x0288)
 #define CASE_LOCK  (*(unsigned char*) 0x0291)
 #define LAST_DEVICE (*(unsigned char*) 0x00BA)
@@ -43,12 +42,12 @@ void hi_read (void* dst, unsigned src, unsigned len)
     __asm__ ("cli");
 }
 
-/* One of our own strings from the RAM under the KERNAL (creature names, help), until the next. */
-const char* hi_str (unsigned int addr)
+/* One of our own strings (creature names, help) from DMTXT, until the next. */
+const char* hi_str (unsigned int offset)
 {
     static char buf[41];
 
-    hi_read (buf, addr, 40);
+    far_text (buf, offset, 40);
     buf[40] = 0;
     return buf;
 }
@@ -108,22 +107,25 @@ void hw_init (void)
 {
     unsigned char port = CPU_PORT;
 
-    /* The upper-case half of the C64's character set, for text: the rest is our own glyphs,
-    ** loaded with DMHI. The character ROM is only visible to the CPU with I/O switched out. */
+    /* The C64's own letters, digits and punctuation (its first 64 characters), for text: the
+    ** next 64 are our own glyphs, loaded with DMHI. With I/O switched out the character ROM is
+    ** at $D000 for reading, and writing there reaches the RAM underneath: so it copies onto
+    ** itself. */
     __asm__ ("sei");
     CPU_PORT = port & ~0x04;
-    memcpy (CHARSET, CHAR_ROM, 0x400);
+    memcpy (CHARSET, CHARSET, 64 * 8);
     CPU_PORT = port;
     __asm__ ("cli");
 
     memset (SCREEN, ' ', 1000);
     memset (COLOUR, COLOR_WHITE, 1000);
-    HIBASE = 0xE0;
+    HIBASE = (unsigned) SCREEN >> 8;
     CASE_LOCK = 0x80;
     VIC.bordercolor = COLOR_BLACK;
     VIC.bgcolor0 = COLOR_BLACK;
-    /* Video bank 3: screen at $E000 (offset $2000), characters at $E800 (offset $2800). */
-    VIC.addr = (8 << 4) | (5 << 1);
+    /* Video bank 3: screen at $CC00 (offset $0C00, in 1K steps), characters at $D000 (offset
+    ** $1000, in 2K steps). */
+    VIC.addr = (3 << 4) | (2 << 1);
     CIA2.pra &= 0xFC;
 
     /* Sprites 0-3 are creatures, in multicolour; sprite 7 is the mouse pointer (mouse.s), whose

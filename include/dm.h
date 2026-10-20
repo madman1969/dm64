@@ -61,7 +61,7 @@ enum { EFF_SET, EFF_CLEAR, EFF_TOGGLE, EFF_HOLD };
 /* Screen layout: the 3D view on the left, the party on the right, messages below. */
 #define VIEW_W   24
 #define VIEW_H   22
-#define SCREEN   ((unsigned char*) 0xE000)
+#define SCREEN   ((unsigned char*) 0xCC00)
 #define COLOUR   ((unsigned char*) 0xD800)
 
 /* ---- hw.c ---- */
@@ -73,7 +73,7 @@ unsigned int hw_read (void* buf, unsigned int len);
 void hw_close (void);
 void hw_init (void);
 void hi_read (void* dst, unsigned src, unsigned len);
-const char* hi_str (unsigned int addr);
+const char* hi_str (unsigned int offset);  /* one of our own strings, from DMTXT */
 void sound (unsigned char pitch, unsigned char wave, unsigned char len);
 void sound_tick (void);
 #define SND_CLICK()  sound (40, 0x81, 2)
@@ -96,6 +96,7 @@ extern unsigned int pool[POOL_SIZE][2];
 unsigned char dungeon_init (void);
 void overlay (unsigned char n);             /* copy overlay n in from far memory (overlay.c) */
 void sprite_fetch (unsigned char type, unsigned int offset, void* dst, unsigned int len);
+void far_text (void* dst, unsigned int offset, unsigned int len);
 void level_flush (void);                    /* the party's level back to far memory */
 unsigned char levels_reload (void);         /* every level as on the disk again */
 extern unsigned int levels_visited;         /* bit n: level n has been entered (saving) */

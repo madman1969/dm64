@@ -8,10 +8,12 @@ Writes:
   <bin>/dmlev.bin           DMLEV: the 14 levels, each a self-contained image (below), which the
                             game keeps in far memory (an REU or SuperCPU, through FarMem) and
                             copies into ordinary memory when the party arrives on the level
-  <bin>/dmhi.bin            DMHI: texts, object names, strings and characters, loaded into the
-                            RAM under the C64's I/O area and KERNAL
+  <bin>/dmhi.bin            DMHI: the custom characters and the mouse pointer, loaded into the
+                            RAM under the C64's I/O area
   <bin>/dmspr.bin           DMSPR: the creatures' sprites, made from DM's own pictures (dmimg.py),
                             kept in far memory
+  <bin>/dmtxt.bin           DMTXT: the dungeon's texts, object names and our own strings, kept in
+                            far memory
 Nothing from the game is kept in the source tree: it all comes from your copy of the disk.
 
 A level image, all words little-endian:
@@ -46,13 +48,12 @@ SEEN_BYTES = 128            # a bit for each square of a 32x32 level: has the pa
 REC_WORDS = {0: 2, 1: 3, 2: 2, 3: 4, 4: 8}      # doors .. creatures; objects are 2
 ITEM_TYPES = range(5, 11)
 
-# Where DMHI's parts go in the C64's memory (see hw.c): the RAM under the I/O area and KERNAL.
-HI_TEXT = 0xD000
-HI_GLYPHS = 0xE800 + art.FIRST_GLYPH * 8
-HI_SPRITES = 0xF000
-HI_NAMES = 0xF800
-HI_STRINGS = 0xE400         # the screen ends at $E3FF
-HI_POINTER = 0xE7C0         # the mouse pointer's sprite, after the strings
+# Where things go in the video chip's bank 3 (see hw.c): the character set at $D000 (DMHI puts
+# the glyphs after the C64's own characters), sprites from $D400, all in the RAM under the I/O
+# area; the bitmap view's colour data at $D800 and bitmap at $E000.
+HI_GLYPHS = 0xD000 + art.FIRST_GLYPH * 8
+HI_SPRITES = 0xD400         # creature sprites, copied in from far memory
+HI_POINTER = 0xD6C0         # the mouse pointer's sprite
 
 # Food value of each junk type (by junk subtype); anything not listed isn't food.
 FOOD = {29: 30, 30: 30, 31: 40, 32: 45, 33: 50, 34: 50, 35: 60, 36: 110}
@@ -201,7 +202,6 @@ def main():
     h.append('#define POOL_BASE %d' % POOL_BASE)
     h.append('#define START_X %d\n#define START_Y %d\n#define START_DIR %d' % D.start)
     h.append('#define NNAMES %d' % len(names))
-    h.append('#define HI_TEXT 0x%04X\n#define HI_NAMES 0x%04X' % (HI_TEXT, HI_NAMES))
     h.append('#define HI_SPRITES 0x%04X      /* where creature sprites are copied to */' % HI_SPRITES)
     h.append('#define SPRITE_SET 320          /* bytes of sprites per creature in DMSPR */')
     h.append('#define SPRITES_TOTAL %dUL' % len(sprites))
@@ -270,12 +270,13 @@ extern const unsigned char mana_multiplier[6];  /* in eighths, by power */
     c.append('};\n')
     c.append(carray('level_size', 'unsigned int', [len(i) for i in images]))
 
+    # DMTXT, kept in far memory: the dungeon's texts, then object names, then our own strings.
+    textdata = b"".join(struct.pack("<H", w) for w in D.text)
     blob, offs = bytearray(), []
     for nm in names:
-        offs.append(HI_NAMES + len(blob))
+        offs.append(len(textdata) + len(blob))
         b = nm.encode('latin1')
         blob += b[:-1] + bytes([b[-1] | 0x80])
-    assert len(blob) <= 0xFFFA - HI_NAMES
     c.append(carray('name_offset', 'unsigned int', offs, 12))
     oi = T['objinfo']
     c.append(carray('obj_icon', 'unsigned char', [o[0] for o in oi], 20))
@@ -300,12 +301,13 @@ extern const unsigned char mana_multiplier[6];  /* in eighths, by power */
         '    { %s },' % ', '.join(map(str, row)) for row in T['mana_cost']))
     c.append(carray('mana_multiplier', 'unsigned char', T['mana_multiplier']))
 
-    # Words of our own, in the RAM under the KERNAL: zero-terminated, at the addresses listed.
+    # Words of our own: zero-terminated, at the offsets listed.
     strings, at = bytearray(), []
     for s in art.CREATURE_NAMES + text.HELP:
-        at.append(HI_STRINGS + len(strings))
+        at.append(len(textdata) + len(blob) + len(strings))
         strings += s.encode('ascii') + b'\0'
-    assert HI_STRINGS + len(strings) <= HI_POINTER, "too many strings for $E400-$E7BF"
+    txt = textdata + bytes(blob) + bytes(strings)
+    h.insert(-1, '#define TXT_TOTAL %dUL       /* DMTXT: texts, names, strings */\n' % len(txt))
     c.append(carray('creature_name_at', 'unsigned int', at[:27], 9))
     c.append(carray('help_line_at', 'unsigned int', at[27:], 9))
 
@@ -325,13 +327,13 @@ extern const unsigned char mana_multiplier[6];  /* in eighths, by power */
     with open(os.path.join(bindir, 'dmlev.bin'), 'wb') as f:
         f.write(struct.pack('<H', 0) + b''.join(images))
 
+    with open(os.path.join(bindir, 'dmtxt.bin'), 'wb') as f:
+        f.write(struct.pack('<H', 0) + txt)
+
     # DMHI: chunks of (address, length, bytes), ended by address 0.
-    textdata = b"".join(struct.pack("<H", w) for w in D.text)
-    assert HI_TEXT + len(textdata) <= 0xE000
+    assert HI_GLYPHS + len(art.glyph_bytes()) <= 0xD400, 'too many glyphs for 128 characters'
     hi = bytearray()
-    for addr, data in ((HI_TEXT, textdata), (HI_GLYPHS, art.glyph_bytes()),
-                       (HI_NAMES, bytes(blob)),
-                       (HI_STRINGS, bytes(strings)), (HI_POINTER, art.pointer_bytes())):
+    for addr, data in ((HI_GLYPHS, art.glyph_bytes()), (HI_POINTER, art.pointer_bytes())):
         hi += struct.pack('<HH', addr, len(data)) + data
     hi += b'\0\0'
     with open(os.path.join(bindir, 'dmhi.bin'), 'wb') as f:

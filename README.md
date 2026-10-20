@@ -32,8 +32,9 @@ Or open `DM64.tsln` in Tedide. It builds the FarMemC64 library, runs the convert
 pre-build step and makes the disk image as a post-build step. Its VICE arguments attach the disk
 image and add the REU.
 
-The disk holds five files: `DM64` (the program), and `DMHI`, `DMLEV`, `DMOVL` and `DMSPR`
-(data, overlays and creature sprites). On a real machine: `LOAD"DM64",8,1` then `RUN`.
+The disk holds six files: `DM64` (the program), and `DMHI`, `DMLEV`, `DMOVL`, `DMSPR` and
+`DMTXT` (characters, levels, overlays, creature sprites and texts). On a real machine:
+`LOAD"DM64",8,1` then `RUN`.
 
 Saved games go on the same disk, as `DMSAVE1` and `DMSAVE2`. A save holds only the levels the
 party has been on, packed: about 10 blocks early on, up to about 120 with every level visited,
@@ -164,20 +165,19 @@ though less often the wiser they are.
 
 ```text
 $0400-$07FF  buffers (the default screen's RAM)           LOWBSS segment, c64-dm64.cfg
-$0801-$BAE3  the program, rules tables, the party's level (3.2K buffer), the party's objects
-$BAE4-$C27F  free (about 1.9K)
-$C280-$CCFF  the overlay area: whichever overlay is in use (2.6K)
-$CD00-$CFFF  C stack (768 bytes)
-$D000-$DFFF  dungeon texts             } in the RAM under the I/O area and KERNAL,
-$E000-$E3FF  screen                    } loaded from DMHI. The video chip uses bank 3
-$E400-$E7BF  creature names, help      } and always sees RAM there. The CPU reads the
-$E7C0-$E7FF  the mouse pointer         } texts and names with the ROMs switched out
-$E800-$EFFF  character set             } (hw.c: hi_read, hi_str).
-$F000-$F2BF  creature sprites, copied  }
-             in from far memory        }
-$F800-$FFF9  object names              }
-far memory   the 14 level images, about 34K (DMLEV), the overlays, 10K (DMOVL), and the
-             creatures' sprites, 8.6K (DMSPR)
+$0801-$BB49  the program, rules tables, the party's level (3.2K buffer), the party's objects
+$BB4A-$BE7F  free (about 820 bytes)
+$BE80-$C8FF  the overlay area: whichever overlay is in use (2.6K)
+$C900-$CBFF  C stack (768 bytes)
+$CC00-$CFFF  the screen
+$D000-$D3FF  character set             } in the RAM under the I/O area; the video chip uses
+$D400-$D6FF  sprites (creatures, from  } bank 3 and always sees RAM there, the CPU writes
+             far memory; the pointer)  } with I/O switched out (hw.c: hi_read)
+$D800-$DBFF  reserved: the bitmap view's colours
+$E000-$FF3F  reserved: the bitmap view, in the RAM under the KERNAL
+far memory   the 14 level images, about 34K (DMLEV), the overlays, 10K (DMOVL), the
+             creatures' sprites, 8.6K (DMSPR), and the dungeon's texts, object names and
+             our own strings, 6K (DMTXT)
 ```
 
 Each level image (see the top of `tools/dmconv.py`) holds the level's squares, the start of
@@ -203,7 +203,8 @@ The largest (saving) sets the area's size, `__OVLSIZE__` in the config.
 | `tools/dmimg.py` | Decodes DM's pictures and makes the creature sprites |
 | `tools/art.py` | The custom characters and the mouse pointer (hand-drawn) |
 | `tools/text.py` | The game's own help text |
-| `tools/dmconv.py` | Writes `gen/dmdata.c`, `gen/glyphs.h` and the DMLEV, DMHI and DMSPR files |
+| `tools/dmconv.py` | Writes `gen/dmdata.c`, `gen/glyphs.h` and the DMLEV, DMHI, DMSPR and DMTXT files |
+| `tools/dmview.py` | DM's view composed from its own wall pictures, and as a C64 bitmap would show it: the groundwork for a bitmap view |
 | `tools/mkdisk.ps1` | Joins the overlays into DMOVL and makes the disk image, keeping saves |
 | `src/main.c` | Start-up, main loop, keys |
 | `src/dungeon.c` | Levels and overlays in far memory, squares, object lists, objects, texts |

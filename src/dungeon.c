@@ -54,7 +54,7 @@ unsigned int pool[POOL_SIZE][2];
 extern unsigned char _OVL1_START__[], _OVL1_SIZE__[];
 #define OVL_START ((void*) _OVL1_START__)
 #define OVL_SIZE ((unsigned int) _OVL1_SIZE__)
-static farptr overlay_far, sprites_far;
+static farptr overlay_far, sprites_far, text_far;
 static unsigned char overlay_in = 255;
 
 void overlay (unsigned char n)
@@ -85,9 +85,9 @@ static farptr load_far (const char* name, farptr p, unsigned long size)
     return p;
 }
 
-/* Puts the level images (DMLEV), overlays (DMOVL) and creature sprites (DMSPR) in far memory,
-** one after another, past the few bytes FarMem's allocator keeps at the start (unused here).
-** Returns 0 if they don't fit, or can't be read. */
+/* Puts the level images (DMLEV), overlays (DMOVL), creature sprites (DMSPR) and texts (DMTXT)
+** in far memory, one after another, past the few bytes FarMem's allocator keeps at the start
+** (unused here). Returns 0 if they don't fit, or can't be read. */
 unsigned char dungeon_init (void)
 {
     unsigned char l;
@@ -97,7 +97,8 @@ unsigned char dungeon_init (void)
         pool[l][0] = NONE;
     }
     if (far_init () <= FAR_NEAR ||
-        far_size () < p + LEVELS_TOTAL + (unsigned long) NOVERLAYS * OVL_SIZE + SPRITES_TOTAL) {
+        far_size () < p + LEVELS_TOTAL + (unsigned long) NOVERLAYS * OVL_SIZE + SPRITES_TOTAL +
+        TXT_TOTAL) {
         return 0;
     }
     for (l = 0; l < NLEVELS; ++l) {
@@ -109,7 +110,14 @@ unsigned char dungeon_init (void)
         return 0;
     }
     sprites_far = load_far ("dmovl", overlay_far, (unsigned long) NOVERLAYS * OVL_SIZE);
-    return sprites_far && load_far ("dmspr", sprites_far, SPRITES_TOTAL);
+    text_far = sprites_far ? load_far ("dmspr", sprites_far, SPRITES_TOTAL) : 0;
+    return text_far && load_far ("dmtxt", text_far, TXT_TOTAL);
+}
+
+/* Reads from DMTXT in far memory: the dungeon's texts, object names and our own strings. */
+void far_text (void* dst, unsigned int offset, unsigned int len)
+{
+    far_read (dst, text_far + offset, len);
 }
 
 /* Copies part of a creature's sprites (DMSPR: big, mirrored big, small) to where the video
@@ -409,7 +417,7 @@ const char* obj_name (unsigned int t)
 
     text_buf[0] = 0;
     if (icon != 255) {
-        hi_read (text_buf, name_offset[icon], 16);
+        far_text (text_buf, name_offset[icon], 16);
         for (i = 0; i < 16; ++i) {
             if (text_buf[i] & 0x80) {
                 text_buf[i] &= 0x7F;
@@ -430,7 +438,7 @@ const char* text_decode (unsigned int offset)
     unsigned char n = 0, w = 0, shift, code, esc = 0;
     const char* e;
 
-    hi_read (text_words, HI_TEXT + offset * 2, sizeof text_words);
+    far_text (text_words, offset * 2, sizeof text_words);
     while (w < 96 && n < 250) {
         for (shift = 10; shift != 0xFB; shift -= 5) {
             code = (unsigned char) (text_words[w] >> shift) & 31;

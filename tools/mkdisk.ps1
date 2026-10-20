@@ -34,6 +34,6 @@ if (Test-Path bin\dm64.d64) {
 }
 & "$Vice\c1541.exe" -format "dungeon master,64" d64 bin\dm64.d64 `
     -write bin\dm64.prg dm64 -write bin\dmhi.bin dmhi -write bin\dmlev.bin dmlev `
-    -write bin\dmovl.bin dmovl -write bin\dmspr.bin dmspr @saves | Out-Null
+    -write bin\dmovl.bin dmovl -write bin\dmspr.bin dmspr -write bin\dmtxt.bin dmtxt @saves | Out-Null
 if ($LASTEXITCODE) { throw "c1541 failed" }
 if ($saves) { Write-Host "Kept saved games:" ($saves | Where-Object { $_ -like "dmsave*" }) }
