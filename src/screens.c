@@ -1,10 +1,13 @@
 /*
-** screens.c - the inventory and help screens, drawn over the view. An overlay (see overlay in
+** screens.c - the inventory and map screens, and choosing the mouse, drawn over the view. An overlay (see overlay in
 ** dungeon.c): they're only needed when asked for.
 */
 
 #include <c64.h>
+#include <mouse.h>
 #include "dm.h"
+
+extern const struct mouse_callbacks mouse_callbacks;   /* mouse.s */
 
 #pragma code-name (push, "OVL2")
 #pragma rodata-name (push, "OVL2")
@@ -189,27 +192,29 @@ void ovl_map (void)
         ui_glyph (left + px, py - top, party_glyph[pdir], COLOR_YELLOW);
     }
     msg ("THE MAP: YOU ARE THE ARROW");
-    msg ("ANY KEY OR CLICK: BACK TO THE DUNGEON");
+    msg ("ANY KEY OR CLICK TO GO BACK");
     zones_clear ();
     zone (0, 0, 40, 25, ' ');
     wait_key ();
     redraw = REDRAW_VIEW | REDRAW_PANEL;
 }
 
-/* The help text is in tools/text.py, kept in the RAM under the KERNAL. */
-void ovl_help (void)
+/* M (here as it's seldom wanted: overlay.c): no pointer, a 1351 mouse in port 1, or a pointer moved by the joystick in port 2. */
+void ovl_mouse (void)
 {
-    unsigned char i;
-
-    ui_clear (0, 0, 40, 22);
-    ui_print (2, 0, COLOR_WHITE, "DUNGEON MASTER 64");
-    for (i = 0; i < NHELP; ++i) {
-        ui_print (0, 2 + i, COLOR_GRAY3, hi_str (help_line_at[i]));
+    if (mouse_mode) {
+        mouse_uninstall ();
     }
-    zones_clear ();
-    zone (0, 0, 40, 25, ' ');
-    wait_key ();
-    redraw = REDRAW_VIEW | REDRAW_PANEL;
+    mouse_mode = mouse_mode == 2 ? 0 : mouse_mode + 1;
+    if (mouse_mode && mouse_install (&mouse_callbacks,
+                                     mouse_mode == 1 ? c64_1351_mou : c64_joy_mou) != MOUSE_ERR_OK) {
+        mouse_mode = 0;
+    }
+    if (mouse_mode) {
+        mouse_show ();
+    }
+    last_buttons = 0;
+    msg (mouse_mode == 0 ? "MOUSE OFF" : mouse_mode == 1 ? "MOUSE IN PORT 1" : "JOYSTICK IN PORT 2");
 }
 
 /* No pops here: cc65 writes string literals at the end of the file, into the segments then

@@ -21,7 +21,7 @@ if ($LASTEXITCODE) { throw "dmconv failed" }
 
 $sources = @(
     "src\main.c", "src\dungeon.c", "src\hw.c", "src\view.c", "src\ui.c", "src\party.c",
-    "src\sensor.c", "src\creature.c", "src\magic.c", "src\overlay.c", "src\mouse.s", "src\irq.s", "src\bitmap.s",
+    "src\sensor.c", "src\creature.c", "src\magic.c", "src\light.c", "src\overlay.c", "src\mouse.s", "src\irq.s", "src\bitmap.s",
     "src\recruit.c", "src\screens.c", "src\cast.c", "src\save.c", "src\unpack.c", "src\unpackasm.s", "gen\dmdata.c",
     "$FarMem\src\farmem.c", "$FarMem\src\farhw.s"
 )

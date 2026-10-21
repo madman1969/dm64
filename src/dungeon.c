@@ -126,6 +126,15 @@ void far_wall (void* dst, unsigned long offset, unsigned int len)
     far_read (dst, wall_far + offset, len);
 }
 
+/* A word from DMTXT's tables (dmconv.py): where a name or line is. */
+unsigned int text_at (unsigned int offset)
+{
+    static unsigned int w;
+
+    far_text (&w, offset, 2);
+    return w;
+}
+
 /* Reads from DMTXT in far memory: the dungeon's texts, object names and our own strings. */
 void far_text (void* dst, unsigned int offset, unsigned int len)
 {
@@ -436,7 +445,7 @@ const char* obj_name (unsigned int t)
 
     text_buf[0] = 0;
     if (icon != 255) {
-        far_text (text_buf, name_offset[icon], 16);
+        far_text (text_buf, text_at (TXT_NAMES + icon * 2), 16);
         for (i = 0; i < 16; ++i) {
             if (text_buf[i] & 0x80) {
                 text_buf[i] &= 0x7F;

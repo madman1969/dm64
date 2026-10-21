@@ -70,7 +70,7 @@ void hit_creature (signed char a, int dmg)
         r[3] -= dmg;
         return;
     }
-    msg (hi_str (creature_name_at[CTYPE (r)]));
+    msg (hi_str (text_at (TXT_CREATURES + CTYPE (r) * 2)));
     msg ("IS SLAIN!");
     for (i = 0; i < 3; ++i) {
         r[3 + i] = r[4 + i];

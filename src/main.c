@@ -101,6 +101,7 @@ int main (void)
             creatures_tick ();
             party_tick ();
             magic_tick ();
+            light_tick ();
             sprites_animate ();
             sound_tick ();
         }

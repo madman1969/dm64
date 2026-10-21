@@ -528,7 +528,7 @@ void sprites_animate (void)
         return;
     }
     frame = (game_time & 8) ? 4 : 0;
-    col = creature_info[sprite_type].colour;
+    col = light_colours[light_level][creature_info[sprite_type].colour];
     if (creature_flash) {
         --creature_flash;
         col = COLOR_WHITE;
@@ -551,7 +551,7 @@ static unsigned char place_small (void)
             small_loaded[i] = small_type[i];
         }
         SPRITE_PTRS[4 + i] = SMALL_BLOCK + i;
-        (&VIC.spr0_color)[4 + i] = creature_info[small_type[i]].colour;
+        (&VIC.spr0_color)[4 + i] = light_colours[light_level][creature_info[small_type[i]].colour];
         VIC.spr_pos[4 + i].x = small_x[i];
         VIC.spr_pos[4 + i].y = small_y[i];
         bits |= 0x10 << i;
@@ -616,6 +616,26 @@ static void place_sprites (unsigned char small_bits)
     sprites_animate ();
 }
 
+/* In the dark (light.c) the view's colours become the light level's (dmview.py's light_colours):
+** the bitmap's shared ones, and each cell's own. The buttons beside it keep theirs. */
+static void light_show (void)
+{
+    const unsigned char* m = light_colours[light_level];
+    unsigned char x, y, *c;
+
+    split_bg = m[12];
+    VIC.spr_mcolor1 = m[15];
+    for (y = 0; y < VIEW_H; ++y) {
+        memset (SCREEN + y * 40, m[11] << 4 | m[15], VIEW_W);
+        if (light_level) {
+            c = COLOUR + y * 40;
+            for (x = 0; x < VIEW_W; ++x) {
+                c[x] = m[c[x] & 15];
+            }
+        }
+    }
+}
+
 void view_draw (void)
 {
     unsigned char i, s;
@@ -635,5 +655,6 @@ void view_draw (void)
     for (i = 0; i < NSQUARES; ++i) {
         square (i);
     }
+    light_show ();
     place_sprites (place_small ());
 }

@@ -239,10 +239,10 @@ typedef struct {
 } level_t;
 
 extern const level_t levels[NLEVELS];
+extern const unsigned char light_colours[6][16];  /* each light level's colours for the C64's */
 extern const unsigned char door_kinds[];        /* DOOR_KINDS of them: see view.c */
 extern const unsigned int level_size[NLEVELS];
 
-extern const unsigned int name_offset[NNAMES];
 extern const unsigned char obj_icon[180];       /* object info index -> icon (and name) */
 extern const unsigned char obj_flags[180];      /* OBJ_ bits below */
 extern const unsigned char weapon_info[46][3];  /* weight, damage, kinetic energy */
@@ -252,8 +252,6 @@ typedef struct {
     unsigned char move_ticks, attack_ticks, defense, attack, poison, dex, colour, flags;
 } creature_info_t;
 extern const creature_info_t creature_info[27];
-extern const unsigned int creature_name_at[27];    /* in the RAM under the KERNAL: hi_str */
-extern const unsigned int help_line_at[NHELP];
 #define CR_NON_MATERIAL 0x40    /* only magic hurts it */
 
 /* Spells: the runes after the power rune (row * 6 + column, 255 for none), the skill level and
@@ -266,7 +264,6 @@ typedef struct {
 #define SPELL_POTION     1
 #define SPELL_PROJECTILE 2
 #define SPELL_OTHER      3
-extern const spell_t spells[NSPELLS];
 extern const unsigned char mana_cost[4][6];     /* each rune's base cost, by row */
 extern const unsigned char mana_multiplier[6];  /* in eighths, by power */
 
@@ -290,6 +287,8 @@ extern const unsigned char mana_multiplier[6];  /* in eighths, by power */
     c.append('};\n')
 
     c.append(carray('door_kinds', 'unsigned char', [st | orn << 4 for st, orn in door_kinds]))
+    c.append('const unsigned char light_colours[6][16] = {\n%s\n};\n' % '\n'.join(
+        '    { %s },' % ', '.join(map(str, row)) for row in dmview.light_colours(G)))
 
     c.append(carray('level_size', 'unsigned int', [len(i) for i in images]))
 
@@ -300,7 +299,6 @@ extern const unsigned char mana_multiplier[6];  /* in eighths, by power */
         offs.append(len(textdata) + len(blob))
         b = nm.encode('latin1')
         blob += b[:-1] + bytes([b[-1] | 0x80])
-    c.append(carray('name_offset', 'unsigned int', offs, 12))
     oi = T['objinfo']
     c.append(carray('obj_icon', 'unsigned char', [o[0] for o in oi], 20))
     c.append(carray('obj_flags', 'unsigned char', [o[3] & 0x7F for o in oi], 20))
@@ -315,11 +313,6 @@ extern const unsigned char mana_multiplier[6];  /* in eighths, by power */
             cr['move'], cr['attack_ticks'], cr['defense'], cr['attack'], cr['poison'], cr['dex'],
             sprite_colours[i], cr['attributes'] & 0x40, art.CREATURE_NAMES[i]))
     c.append('};\n')
-    c.append('const spell_t spells[NSPELLS] = {')
-    for sp in T['spells']:
-        c.append('    { { %d, %d, %d }, %d, %d, %d, %d, %d },' % tuple(
-            sp['runes'] + [sp['level'], sp['skill'], sp['kind'], sp['type'], sp['strength']]))
-    c.append('};\n')
     c.append('const unsigned char mana_cost[4][6] = {\n%s\n};\n' % '\n'.join(
         '    { %s },' % ', '.join(map(str, row)) for row in T['mana_cost']))
     c.append(carray('mana_multiplier', 'unsigned char', T['mana_multiplier']))
@@ -330,7 +323,17 @@ extern const unsigned char mana_multiplier[6];  /* in eighths, by power */
         at.append(len(textdata) + len(blob) + len(strings))
         strings += s.encode('ascii') + b'\0'
     txt = textdata + bytes(blob) + bytes(strings)
-    h.insert(-1, '#define TXT_TOTAL %dUL       /* DMTXT: texts, names, strings */\n' % len(txt))
+    # Then tables only looked at now and then, kept out of the C64's own memory: where each object
+    # name, creature name and help line is, and the spells (spell_t's, 8 bytes each).
+    tables = struct.pack('<%dH' % len(offs), *offs) + struct.pack('<%dH' % len(at), *at)
+    for sp in T['spells']:
+        tables += bytes(sp['runes'] + [sp['level'], sp['skill'], sp['kind'], sp['type'], sp['strength']])
+    h.insert(-1, '#define TXT_NAMES %d          /* in DMTXT: a word per object name\'s offset */' % len(txt))
+    h.insert(-1, '#define TXT_CREATURES %d      /* ... per creature name */' % (len(txt) + 2 * len(offs)))
+    h.insert(-1, '#define TXT_HELP %d           /* ... per help line */' % (len(txt) + 2 * len(offs) + 54))
+    h.insert(-1, '#define TXT_SPELLS %d         /* then the spells */' % (len(txt) + 2 * len(offs) + 2 * len(at)))
+    txt += tables
+    h.insert(-1, '#define TXT_TOTAL %dUL       /* DMTXT: texts, names, strings, tables */\n' % len(txt))
 
     # The wall ornaments some level uses (0, the unreadable inscription, stands for any writing).
     used_orns = {0}
@@ -362,8 +365,6 @@ extern const unsigned char mana_multiplier[6];  /* in eighths, by power */
         '#define DOOR_ORN_NONE %d' % dmview.DOOR_ORN_NONE,
         '#define DOOR_ORN_BROKEN %d' % dmview.DOOR_ORN_BROKEN,
         '#define DOOR_SETS %d' % dmview.DOOR_SETS, '']))
-    c.append(carray('creature_name_at', 'unsigned int', at[:27], 9))
-    c.append(carray('help_line_at', 'unsigned int', at[27:], 9))
 
     with open(os.path.join(gendir, 'dmdata.h'), 'w') as f:
         f.write('\n'.join(h) + '\n')

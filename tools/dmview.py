@@ -762,6 +762,36 @@ def object_tables(objinfo):
     return bytes(out)
 
 
+# ---- light and darkness ---------------------------------------------------------------------
+# DM darkens the view with five more palettes, each darker than the last (GRAPHICS.DAT item 562).
+# On the C64 each of the view's colours becomes another (view.c): for each light level and C64
+# colour, the C64 colour nearest to what the DM colour it stands for becomes at that level.
+# (Colours no DM colour maps to are darkened like the greys.)
+LIGHT_REPRESENTS = {0: 0, 11: 12, 12: 1, 15: 13, 1: 15, 9: 3, 3: 4, 8: 5, 5: 7, 2: 8, 10: 10,
+                    7: 11, 6: 14}
+
+
+def light_colours(G):
+    g = G.item(dmimg.PALETTE_ITEM)
+    pals = [[dmimg.st_rgb(w) for w in struct.unpack_from('>16H', g, dmimg.PALETTE_OFFSET + 32 * level)]
+            for level in range(6)]
+    out = []
+    for level, pal in enumerate(pals):
+        row = []
+        for c in range(16):
+            if level == 0:
+                row.append(c)
+            elif c in LIGHT_REPRESENTS:
+                rep = LIGHT_REPRESENTS[c]
+                greys = rep in (0, 1, 2, 12, 13, 15)        # greys stay greys
+                row.append(dmimg.nearest(pal[rep], (0, 11, 12, 15, 1) if greys else range(16)))
+            else:
+                f = sum(pal[15]) / max(1, sum(pals[0][15]))
+                row.append(dmimg.nearest(tuple(int(v * f) for v in dmimg.C64[c]), range(16)))
+        out.append(row)
+    return out
+
+
 # ---- writing on walls -----------------------------------------------------------------------------
 # DM's inscription font (item 120): 36 shaded letters, 8x8 each, side by side: A-Z, space, full
 # stop, then symbols. Each becomes one cell of the bitmap: 8 bytes of pattern, 8 of mask (view.c

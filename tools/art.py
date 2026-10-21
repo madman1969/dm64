@@ -197,14 +197,15 @@ ARROWS = {
 
 
 def panel_cells():
-    """The panel as {row: 96 bitmap bytes} (pixels 0 background, 1 dark, 2 light, 3 white)."""
+    """The panel as {row: 96 bitmap bytes} (pixels 1 dark grey, 2 light grey, 3 white). It
+    never uses 0, the bitmap's background, which darkens with the view (view.c)."""
     w, h = PANEL_COLS * 4, 17 * 8
     px = [[1] * w for _ in range(h)]
     for cx, cy, cw, ch, what in PANEL_BUTTONS:
         x0, y0, x1, y1 = cx * 4, cy * 8, (cx + cw) * 4 - 1, (cy + ch) * 8 - 2
         for y in range(y0, y1 + 1):
             for x in range(x0, x1 + 1):
-                px[y][x] = 2 if (y == y0 or x == x0) else 0
+                px[y][x] = 3 if (y == y0 or x == x0) else 2
         if what in ARROWS:
             art = ARROWS[what]
         else:
@@ -214,7 +215,7 @@ def panel_cells():
         for y, r in enumerate(art):
             for x, c in enumerate(r):
                 if c == '#':
-                    px[oy + y][ox + x] = 3
+                    px[oy + y][ox + x] = 1
     rows = {}
     for cy in range(17):
         data = bytearray()

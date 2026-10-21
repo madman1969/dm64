@@ -21,7 +21,7 @@
 #pragma rodata-name (push, "OVL4")
 #pragma data-name (push, "OVL4")
 
-#define SAVE_VERSION 4
+#define SAVE_VERSION 5
 #define DEVICE (*(unsigned char*) 0x00BA < 8 ? 8 : *(unsigned char*) 0x00BA)
 
 typedef struct {
@@ -37,8 +37,8 @@ static char name[] = "dmsave1";
 static const char magic[4] = { 'D', 'M', '6', '4' };
 
 /* The parts after the header. */
-static void* const part_ptr[3] = { champ, pool, events };
-static const unsigned int part_size[3] = { sizeof champ, sizeof pool, sizeof events };
+static void* const part_ptr[4] = { champ, pool, events, &light };
+static const unsigned int part_size[4] = { sizeof champ, sizeof pool, sizeof events, sizeof light };
 
 /* Buffers, borrowed from the view (drawn again afterwards): a level's bytes, and the packed. */
 #define BUF      view_cols
@@ -228,7 +228,7 @@ void ovl_save (void)
     h.visited = levels_visited;
 
     ok = create () && put (&h, sizeof h) == sizeof h;
-    for (i = 0; ok && i < 3; ++i) {
+    for (i = 0; ok && i < 4; ++i) {
         ok = put (part_ptr[i], part_size[i]) == part_size[i];
     }
     for (i = 0; ok && i < NLEVELS; ++i) {
@@ -275,7 +275,7 @@ unsigned char ovl_load (void)
     if (!levels_reload () || !open_save ()) {
         damaged ();
     }
-    for (i = 0; i < 3; ++i) {
+    for (i = 0; i < 4; ++i) {
         if (hw_read (part_ptr[i], part_size[i]) != part_size[i]) {
             damaged ();
         }

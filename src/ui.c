@@ -87,8 +87,7 @@ const char* ui_num (unsigned int n, unsigned char width)
 #define MAXZONES 24
 static unsigned char zx[MAXZONES], zy[MAXZONES], zw[MAXZONES], zh[MAXZONES], zkey[MAXZONES];
 static unsigned char nzones;
-static unsigned char mouse_mode, last_buttons;     /* mouse_mode: 0 off, 1 mouse, 2 joystick */
-extern const struct mouse_callbacks mouse_callbacks;   /* mouse.s */
+unsigned char mouse_mode, last_buttons;            /* mouse_mode: 0 off, 1 mouse, 2 joystick */
 
 void zones_clear (void)
 {
@@ -159,23 +158,6 @@ unsigned char wait_key (void)
     return k;
 }
 
-/* M: no pointer, a 1351 mouse in port 1, or a pointer moved by the joystick in port 2. */
-void mouse_cycle (void)
-{
-    if (mouse_mode) {
-        mouse_uninstall ();
-    }
-    mouse_mode = mouse_mode == 2 ? 0 : mouse_mode + 1;
-    if (mouse_mode && mouse_install (&mouse_callbacks,
-                                     mouse_mode == 1 ? c64_1351_mou : c64_joy_mou) != MOUSE_ERR_OK) {
-        mouse_mode = 0;
-    }
-    if (mouse_mode) {
-        mouse_show ();
-    }
-    last_buttons = 0;
-    msg (mouse_mode == 0 ? "MOUSE OFF" : mouse_mode == 1 ? "MOUSE IN PORT 1" : "JOYSTICK POINTER IN PORT 2");
-}
 
 /* The dungeon's own zones: the view, the buttons beside it (art.py's PANEL_BUTTONS), the
 ** champions and the status line. */

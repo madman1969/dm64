@@ -14,11 +14,12 @@
 ; the KERNAL's handler, and out again afterwards.
 ;
 
-        .export _irq_vectors, _irq_init, _split_on
+        .export _irq_vectors, _irq_init, _split_on, _split_bg
 
         .segment "DATA"
 
 _split_on:  .byte 0
+_split_bg:  .byte 12                ; the bitmap's background: darker in the dark (view.c)
 old_irq:    .word 0
 port:       .byte 0                 ; $01 as it normally is: the KERNAL and I/O in
 phase:      .byte 0
@@ -109,7 +110,7 @@ split:
         sta $D011
         stx $D016
         sty $D018
-        lda #12
+        lda _split_bg
         sta $D021
         lda #SPLIT_LINE
         ldx #1

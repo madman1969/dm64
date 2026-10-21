@@ -33,6 +33,7 @@
     "src/sensor.c",
     "src/creature.c",
     "src/magic.c",
+    "src/light.c",
     "src/overlay.c",
     "src/mouse.s",
     "src/irq.s",

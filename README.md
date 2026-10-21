@@ -167,11 +167,15 @@ though less often the wiser they are.
   visible teleporters and objects on the floor. It's kept with the level, so it's saved too.
 - Food, health/stamina/mana recovery, potions (VI, MON, EE, ROS, KU, DANE, NETA, water), and
   scrolls.
+- Light and darkness, by DM's rules (`src/light.c`): every level but the first is dark, lit
+  by torches in the champions' hands (as bright as their charges, burning down as time
+  passes), an illumulet, and the light, magic torch and darkness spells, whose light fades
+  away step by step. The view darkens through DM's six palettes: each of the C64's colours in
+  it becomes, at each level, the C64 colour nearest to what DM shows (`tools/dmview.py`).
 
 ### Not yet
 
-- Darkness and torches (so the light and darkness spells only say so), magic vision, magic
-  footprints, water, experience and levelling up, and poison. Spells can't yet be learnt
+- Magic vision, magic footprints, water, experience and levelling up, and poison. Spells can't yet be learnt
   better through practice.
 - The dungeon's projectile launchers and creature generators, and creatures casting spells.
 - DM's exact formulas for spell damage, shield strength and how long spells last. The ones
@@ -187,10 +191,10 @@ though less often the wiser they are.
 
 ```text
 $0400-$07FF  buffers (the default screen's RAM)           LOWBSS segment, c64-dm64.cfg
-$0801-$BB54  the program, rules tables, the party's level (3.2K buffer), the party's objects
-$BB55-$BE7F  free (about 800 bytes)
-$BE80-$C8FF  the overlay area: whichever overlay is in use (2.6K)
-$C900-$CBFF  C stack (768 bytes)
+$0801-$BEAB  the program, rules tables, the party's level (3.2K buffer), the party's objects
+$BEAC-$BF7F  free (about 200 bytes)
+$BF80-$C9FF  the overlay area: whichever overlay is in use (2.6K)
+$CA00-$CBFF  C stack (512 bytes)
 $CC00-$CFFF  the screen; its top 17 rows are the bitmap's colours
 $D000-$D3FF  character set             } in the RAM under the I/O area; the video chip uses
 $D400-$D6FF  sprites (creatures, from  } bank 3 and always sees RAM there, the CPU writes
@@ -200,7 +204,7 @@ $E000-$FF3F  the bitmap (its top 17 rows: the view, and the panel beside it), in
              under the KERNAL
 far memory   the 14 level images, about 34K (DMLEV), the overlays, 13K (DMOVL), the
              creatures' sprites, 8.6K (DMSPR), the dungeon's texts, object names and our
-             own strings, 6K (DMTXT), and the view's pictures, 382K (DMWAL): about 450K
+             own strings and some tables, 7K (DMTXT), and the view's pictures, 382K (DMWAL): about 450K
 ```
 
 The screen is split by a raster interrupt (`src/irq.s`): its top 17 rows are a multicolour
@@ -253,9 +257,10 @@ strings would land in the main program.)
 | `src/sensor.c` | Sensors, doors, pits, stairs, teleporters, moving and clicking |
 | `src/creature.c` | Creatures on the party's level |
 | `src/magic.c` | Projectiles, and spells running down |
+| `src/light.c` | Light and darkness: torches, light spells, which palette |
 | `src/overlay.c` | The way into each overlay |
-| `src/recruit.c` | Overlay: recruiting champions from the mirrors |
-| `src/screens.c` | Overlay: the inventory, help and the map |
+| `src/recruit.c` | Overlay: recruiting champions from the mirrors, and help |
+| `src/screens.c` | Overlay: the inventory and the map, and choosing the mouse |
 | `src/cast.c` | Overlay: casting spells, potions and the other spells |
 | `src/save.c` | Overlay: saving and loading |
 | `src/unpack.c`, `src/unpackasm.s` | Overlay: unpacking DMWAL into far memory as the game starts |

@@ -86,11 +86,13 @@ static unsigned char skill_of (champion_t* c, unsigned char skill)
 
 static void cast (champion_t* c)
 {
-    const spell_t* sp;
-    unsigned char i, power = runes[0], missing, need, wis;
+    static spell_t spell;           /* the spell table is in DMTXT */
+    spell_t* sp = &spell;
+    unsigned char i, power = runes[0], missing, need, wis, sv;
     unsigned int* r;
 
-    for (i = 0, sp = spells; i < NSPELLS; ++i, ++sp) {
+    for (i = 0; i < NSPELLS; ++i) {
+        far_text (sp, TXT_SPELLS + i * sizeof spell, sizeof spell);
         if (sp->rune[0] == runes[1] &&
             sp->rune[1] == (nrunes > 2 ? runes[2] : 255) &&
             sp->rune[2] == (nrunes > 3 ? runes[3] : 255)) {
@@ -146,10 +148,17 @@ static void cast (champion_t* c)
             }
             msg (held == NONE ? "NOTHING APPEARS" : "SOMETHING APPEARS IN YOUR HAND");
             break;
+        /* DM's spell power (sv) is the power rune's (1-6) plus one, times 4. */
         case S_LIGHT:
+            sv = (power + 2) << 2;
+            light_spell (1 - (sv >> 1), 10000 + ((sv - 8) << 9));
+            break;
         case S_TORCH:
+            sv = (power + 2) << 2;
+            light_spell (-1 - (sv >> 2), 2000 + ((sv - 3) << 7));
+            break;
         case S_DARKNESS:
-            msg ("THE DUNGEON IS ALWAYS LIT IN THIS VERSION");
+            light_spell (power + 2, 98);
             break;
         default:
             msg ("THAT SPELL HAS NO EFFECT YET");

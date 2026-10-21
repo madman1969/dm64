@@ -99,6 +99,7 @@ unsigned char dungeon_init (void);
 void overlay (unsigned char n);             /* copy overlay n in from far memory (overlay.c) */
 void sprite_fetch (unsigned char type, unsigned int offset, void* dst, unsigned int len);
 void far_text (void* dst, unsigned int offset, unsigned int len);
+unsigned int text_at (unsigned int offset);  /* a word of DMTXT's tables */
 void far_wall (void* dst, unsigned long offset, unsigned int len);  /* from DMWAL */
 void level_flush (void);                    /* the party's level back to far memory */
 unsigned char levels_reload (void);         /* every level as on the disk again */
@@ -139,6 +140,7 @@ unsigned char face_cell (void);             /* the side of the wall ahead that f
 void irq_vectors (void);                    /* first thing: see irq.s */
 void irq_init (void);
 extern unsigned char split_on;              /* 0: all text */
+extern unsigned char split_bg;              /* the bitmap's background colour */
 void __fastcall__ blit_row (const unsigned char* row);
 void __fastcall__ stamp_cell (unsigned char glyph);  /* DM's inscription font */
 void __fastcall__ object_row (const unsigned char* row);   /* an object, a row at a time */
@@ -248,6 +250,17 @@ void launch (unsigned char type, unsigned char power, unsigned char strength);
 signed char projectile_at (unsigned char x, unsigned char y);   /* proj[] index or -1 */
 unsigned char projectile_colour (unsigned char p);
 
+/* ---- light.c ---- */
+typedef struct {
+    int magic;                  /* DM's magical light amount */
+    signed char power[4];       /* light spells running: their power (see light_spell) */
+    unsigned int ticks[4];      /* and ticks until they next fade */
+} light_t;
+extern light_t light;
+extern unsigned char light_level;           /* DM's palette: 0 the brightest, 5 the darkest */
+void light_spell (signed char p, unsigned int ticks);
+void light_tick (void);
+
 /* ---- overlay.c: the overlays, and the way into each ---- */
 void recruit (void);
 void inventory (unsigned char who);
@@ -260,6 +273,8 @@ void ovl_recruit (void);
 void ovl_inventory (unsigned char who);
 void ovl_help (void);
 void ovl_map (void);
+void ovl_mouse (void);
+extern unsigned char mouse_mode, last_buttons;     /* ui.c: 0 off, 1 a mouse, 2 a joystick */
 void ovl_cast (void);
 void ovl_save (void);
 unsigned char ovl_load (void);

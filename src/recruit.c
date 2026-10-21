@@ -10,6 +10,7 @@
 */
 
 #include <string.h>
+#include <c64.h>
 #include "dm.h"
 
 #pragma code-name (push, "OVL1")
@@ -194,6 +195,22 @@ void ovl_recruit (void)
     sensor[1] &= 0xFF80;            /* an empty mirror now */
     msg (c->name);
     msg ("JOINS THE PARTY");
+}
+
+/* The help screen, here as there's room (overlay.c). The help text is in tools/text.py, kept in the RAM under the KERNAL. */
+void ovl_help (void)
+{
+    unsigned char i;
+
+    ui_clear (0, 0, 40, 22);
+    ui_print (2, 0, COLOR_WHITE, "DUNGEON MASTER 64");
+    for (i = 0; i < NHELP; ++i) {
+        ui_print (0, 2 + i, COLOR_GRAY3, hi_str (text_at (TXT_HELP + i * 2)));
+    }
+    zones_clear ();
+    zone (0, 0, 40, 25, ' ');
+    wait_key ();
+    redraw = REDRAW_VIEW | REDRAW_PANEL;
 }
 
 /* No pops here: cc65 writes string literals at the end of the file, into the segments then
