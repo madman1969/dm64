@@ -69,20 +69,22 @@ enum { EFF_SET, EFF_CLEAR, EFF_TOGGLE, EFF_HOLD };
 #define VIEW_BUF 512
 extern unsigned char view_chars[VIEW_BUF];  /* buffers for drawing the view */
 extern unsigned char view_cols[VIEW_BUF];
-unsigned char hw_load_data (void);
 unsigned char hw_open (const char* name);
 unsigned int hw_read (void* buf, unsigned int len);
 void hw_close (void);
-void hw_init (void);
 void hi_read (void* dst, unsigned src, unsigned len);
 const char* hi_str (unsigned int offset);  /* one of our own strings, from DMTXT */
-void sound (unsigned char pitch, unsigned char wave, unsigned char len);
-void sound_tick (void);
-#define SND_CLICK()  sound (40, 0x81, 2)
-#define SND_HIT()    sound (12, 0x81, 4)
-#define SND_HURT()   sound (6, 0x21, 6)
-#define SND_DOOR()   sound (3, 0x41, 8)
-#define SND_STEP()   sound (2, 0x81, 1)
+/* sound.s: sound effects */
+void __fastcall__ sfx (unsigned char effect);
+void sound_init (void);
+enum { SFX_CLICK, SFX_DOOR, SFX_HIT, SFX_HURT, SFX_BUMP, SFX_SWING, SFX_FIREBALL, SFX_EXPLOSION,
+       SFX_SPELL, SFX_CRY, SFX_CRY2, SFX_CRY3, SFX_CRY4, SFX_PICK, SFX_GULP, SFX_SLAIN,
+       SFX_TELEPORT, SFX_FALL };
+#define SND_CLICK()  sfx (SFX_CLICK)
+#define SND_HIT()    sfx (SFX_HIT)
+#define SND_HURT()   sfx (SFX_HURT)
+#define SND_DOOR()   sfx (SFX_DOOR)
+#define SND_STEP()   sfx (SFX_BUMP)
 
 /* ---- dungeon.c ---- */
 /* The party's level, copied in from far memory: its squares, object lists and things. */
@@ -98,8 +100,10 @@ extern unsigned int pool[POOL_SIZE][2];
 unsigned char dungeon_init (void);
 void overlay (unsigned char n);             /* copy overlay n in from far memory (overlay.c) */
 void sprite_fetch (unsigned char type, unsigned int offset, void* dst, unsigned int len);
+unsigned char sprite_view (unsigned char type, unsigned char view, void* dst);
 void far_text (void* dst, unsigned int offset, unsigned int len);
 unsigned int text_at (unsigned int offset);  /* a word of DMTXT's tables */
+unsigned char text_byte (unsigned int offset);  /* a byte of them */
 void far_wall (void* dst, unsigned long offset, unsigned int len);  /* from DMWAL */
 void level_flush (void);                    /* the party's level back to far memory */
 unsigned char levels_reload (void);         /* every level as on the disk again */
@@ -153,6 +157,7 @@ void view_draw (void);
 void piece (unsigned int id, unsigned char quarters);        /* one of DMWAL's pictures */
 void sprite (unsigned int id, int x, int bottom, unsigned char centred);  /* an object sprite */
 void sprites_off (void);
+void view_sprites (void);                   /* REDRAW_SPRITES */
 void sprites_animate (void);                /* each tick: creatures' idle frames, hit flash */
 extern unsigned char creature_flash;        /* ticks the creature ahead shows white, when hit */
 
@@ -183,6 +188,7 @@ void mouse_cycle (void);
 extern unsigned char redraw;                /* REDRAW_ bits: what needs drawing again */
 #define REDRAW_VIEW  1
 #define REDRAW_PANEL 2
+#define REDRAW_SPRITES 4            /* only the creature ahead's look */
 
 /* ---- party.c ---- */
 #define NSLOTS 15
@@ -233,7 +239,12 @@ void drop_object (void);
 
 /* ---- creature.c ---- */
 #define MAXACTIVE 24
-typedef struct { unsigned int thing; unsigned char x, y, timer, atk; } active_t;
+typedef struct {
+    unsigned int thing;
+    unsigned char x, y, timer, atk;
+    unsigned char dir;          /* the way it faces (0 north .. 3 west) */
+    unsigned char attacking;    /* ticks it still shows its attack */
+} active_t;
 extern active_t active[MAXACTIVE];
 extern unsigned char nactive;
 void creatures_scan (void);
@@ -281,6 +292,7 @@ extern unsigned char mouse_mode, last_buttons;     /* ui.c: 0 off, 1 a mouse, 2 
 void ovl_cast (void);
 void ovl_save (void);
 unsigned char ovl_load (void);
+unsigned char ovl_start (void);              /* start.c, in overlay 4: data, video chip */
 unsigned char ovl_unpack (const char* name, unsigned long dst, unsigned long size,
                           unsigned char* buf);  /* unpack.c, in overlay 4 */
 

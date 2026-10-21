@@ -330,7 +330,7 @@ void party_entered (void)
             l = find_level (levels[lev].depth + 1);
             if (l != 255 && change_level (l)) {
                 msg ("THE PARTY FALLS!");
-                SND_HURT ();
+                sfx (SFX_FALL);
                 for (i = 0; i < nchamps; ++i) {
                     damage_champion (i, 2 + (rand () & 7));
                 }
@@ -362,7 +362,7 @@ void party_entered (void)
             py = (r[1] >> 5) & 31;
             pdir = (r[1] & 0x1000) ? (r[1] >> 10) & 3 : (pdir + (r[1] >> 10)) & 3;
             if (r[1] & 0x8000) {
-                SND_DOOR ();
+                sfx (SFX_TELEPORT);
             }
             party_entered ();
             break;
@@ -588,6 +588,7 @@ void take_object (void)
         return;
     }
     msg (obj_name (held));
+    sfx (SFX_PICK);
     redraw = REDRAW_VIEW | REDRAW_PANEL;
 }
 
@@ -613,5 +614,6 @@ void drop_object (void)
         floor_object (px, py, t, 1);
     }
     held = NONE;
+    sfx (SFX_PICK);
     redraw = REDRAW_VIEW | REDRAW_PANEL;
 }

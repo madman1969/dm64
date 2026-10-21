@@ -49,7 +49,7 @@ unsigned char armour_total (unsigned char who)
     for (s = SL_READY; s <= SL_FEET; ++s) {
         t = champ[who].slot[s];
         if (t != NONE && TH_TYPE (t) == T_ARMOUR) {
-            total += armour_info[thing_ptr (t)[1] & 0x7F][1];
+            total += text_byte (TXT_ARMOUR + (thing_ptr (t)[1] & 0x7F) * 2 + 1);
         }
     }
     return total;
@@ -91,8 +91,8 @@ void attack (unsigned char who)
     }
     if (w != NONE && TH_TYPE (w) == T_WEAPON) {
         wi = thing_ptr (w)[1] & 0x7F;
-        weight = weapon_info[wi][0];
-        dmg = weapon_info[wi][1];
+        weight = text_byte (TXT_WEAPONS + wi * 3);
+        dmg = text_byte (TXT_WEAPONS + wi * 3 + 1);
     }
     c->cooldown = 4 + (weight >> 3);
     if (c->sta > 2) {
@@ -101,7 +101,7 @@ void attack (unsigned char who)
     redraw |= REDRAW_PANEL;
     a = creature_at (px + dir_dx[pdir], py + dir_dy[pdir]);
     if (a < 0) {
-        SND_STEP ();
+        sfx (SFX_SWING);                /* nothing there */
         return;
     }
     ci = &creature_info[th_creature[TH_INDEX (active[a].thing)][2] >> 8];
@@ -150,7 +150,7 @@ void use_held (unsigned char who)
     oi = obj_info (held);
     switch (TH_TYPE (held)) {
     case T_JUNK:
-        v = food_value[r[1] & 0x3F];
+        v = text_byte (TXT_FOOD + (r[1] & 0x3F));
         if (!v) {
             break;
         }
@@ -158,6 +158,7 @@ void use_held (unsigned char who)
         pool_free (held);
         held = NONE;
         msg ("YUM");
+        sfx (SFX_GULP);
         redraw |= REDRAW_PANEL;
         return;
     case T_POTION:
@@ -181,6 +182,7 @@ void use_held (unsigned char who)
         if (c->mana > c->maxmana) c->mana = c->maxmana;
         r[1] = 20 << 8;                                 /* an empty flask now */
         msg ("GULP");
+        sfx (SFX_GULP);
         redraw |= REDRAW_PANEL;
         return;
     case T_SCROLL:

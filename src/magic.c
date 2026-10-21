@@ -47,7 +47,7 @@ static void burst (unsigned char p, unsigned char x, unsigned char y)
     unsigned int t;
     int dmg = ((q->strength * (q->power + 2)) >> 2) + (rand () & 7);
 
-    SND_HIT ();
+    sfx (SFX_EXPLOSION);
     if (a >= 0) {
         nonmaterial = creature_info[th_creature[TH_INDEX (active[a].thing)][2] >> 8].flags
                       & CR_NON_MATERIAL;
@@ -109,6 +109,7 @@ void launch (unsigned char type, unsigned char power, unsigned char strength)
     q->power = power;
     q->strength = strength;
     q->range = 4 + power * 2;
+    sfx (type == P_FIREBALL ? SFX_FIREBALL : SFX_SPELL);
     fly (nproj - 1);
     redraw |= REDRAW_VIEW;
 }

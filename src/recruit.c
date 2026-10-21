@@ -52,7 +52,7 @@ static void copy_line (char* dst, const char* src, unsigned char max)
 
 static unsigned char place (champion_t* c, unsigned int t)
 {
-    unsigned char oi = obj_info (t), f = obj_flags[oi], s;
+    unsigned char oi = obj_info (t), f = text_byte (TXT_OBJ_FLAGS + oi), s;
 
     if (TH_TYPE (t) == T_WEAPON && c->slot[SL_ACTION] == NONE) {
         s = SL_ACTION;

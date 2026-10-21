@@ -223,6 +223,7 @@ def main():
     h.append('#define NNAMES %d' % len(names))
     h.append('#define HI_SPRITES 0x%04X      /* where creature sprites are copied to */' % HI_SPRITES)
     h.append('#define SPRITE_SET 320          /* bytes of sprites per creature in DMSPR */')
+    h.append('#define SPRITE_HEADER %d        /* DMSPR\'s table of the other views */' % dmimg.SPRITE_HEADER)
     h.append('#define SPRITES_TOTAL %dUL' % len(sprites))
     h.append('#define HI_POINTER 0x%04X' % HI_POINTER)
     h.append('#define NHELP %d' % len(text.HELP))
@@ -243,16 +244,15 @@ extern const unsigned char light_colours[6][16];  /* each light level's colours 
 extern const unsigned char door_kinds[];        /* DOOR_KINDS of them: see view.c */
 extern const unsigned int level_size[NLEVELS];
 
-extern const unsigned char obj_icon[180];       /* object info index -> icon (and name) */
-extern const unsigned char obj_flags[180];      /* OBJ_ bits below */
-extern const unsigned char weapon_info[46][3];  /* weight, damage, kinetic energy */
-extern const unsigned char armour_info[58][2];  /* weight, defence */
-extern const unsigned char food_value[64];      /* by junk type */
+/* In DMTXT (text_byte): TXT_OBJ_ICON object info index -> icon (and name); TXT_OBJ_FLAGS the
+** same -> OBJ_ bits below; TXT_WEAPONS 46 x (weight, damage, kinetic energy); TXT_ARMOUR 58 x
+** (weight, defence); TXT_FOOD by junk type. */
 typedef struct {
     unsigned char move_ticks, attack_ticks, defense, attack, poison, dex, colour, flags;
 } creature_info_t;
 extern const creature_info_t creature_info[27];
 #define CR_NON_MATERIAL 0x40    /* only magic hurts it */
+#define CR_CRY          0x03    /* which of sound.s's cries it makes */
 
 /* Spells: the runes after the power rune (row * 6 + column, 255 for none), the skill level and
 ** skill they need (2 or 12-15 priest, 3 or 16-19 wizard), what they are (SPELL_ below), which
@@ -300,18 +300,11 @@ extern const unsigned char mana_multiplier[6];  /* in eighths, by power */
         b = nm.encode('latin1')
         blob += b[:-1] + bytes([b[-1] | 0x80])
     oi = T['objinfo']
-    c.append(carray('obj_icon', 'unsigned char', [o[0] for o in oi], 20))
-    c.append(carray('obj_flags', 'unsigned char', [o[3] & 0x7F for o in oi], 20))
-    c.append('const unsigned char weapon_info[46][3] = {\n%s\n};\n' % '\n'.join(
-        '    { %d, %d, %d },' % (w[0], w[2], w[3]) for w in T['weapons']))
-    c.append('const unsigned char armour_info[58][2] = {\n%s\n};\n' % '\n'.join(
-        '    { %d, %d },' % a for a in T['armour']))
-    c.append(carray('food_value', 'unsigned char', [FOOD.get(i, 0) for i in range(64)]))
     c.append('const creature_info_t creature_info[27] = {')
     for i, cr in enumerate(T['creatures']):
         c.append('    { %d, %d, %d, %d, %d, %d, %d, %d },  /* %s */' % (
             cr['move'], cr['attack_ticks'], cr['defense'], cr['attack'], cr['poison'], cr['dex'],
-            sprite_colours[i], cr['attributes'] & 0x40, art.CREATURE_NAMES[i]))
+            sprite_colours[i], (cr['attributes'] & 0x40) | cr['sound'] & 3, art.CREATURE_NAMES[i]))
     c.append('};\n')
     c.append('const unsigned char mana_cost[4][6] = {\n%s\n};\n' % '\n'.join(
         '    { %s },' % ', '.join(map(str, row)) for row in T['mana_cost']))
@@ -328,6 +321,13 @@ extern const unsigned char mana_multiplier[6];  /* in eighths, by power */
     tables = struct.pack('<%dH' % len(offs), *offs) + struct.pack('<%dH' % len(at), *at)
     for sp in T['spells']:
         tables += bytes(sp['runes'] + [sp['level'], sp['skill'], sp['kind'], sp['type'], sp['strength']])
+    # And the rules tables for objects: icons, flags, weapons, armour, food.
+    for name, data in (('OBJ_ICON', bytes(o[0] for o in oi)), ('OBJ_FLAGS', bytes(o[3] & 0x7F for o in oi)),
+                       ('WEAPONS', b''.join(bytes([w[0], w[2], w[3]]) for w in T['weapons'])),
+                       ('ARMOUR', b''.join(bytes(a) for a in T['armour'])),
+                       ('FOOD', bytes(FOOD.get(i, 0) for i in range(64)))):
+        h.insert(-1, '#define TXT_%s %d' % (name, len(txt) + len(tables)))
+        tables += data
     h.insert(-1, '#define TXT_NAMES %d          /* in DMTXT: a word per object name\'s offset */' % len(txt))
     h.insert(-1, '#define TXT_CREATURES %d      /* ... per creature name */' % (len(txt) + 2 * len(offs)))
     h.insert(-1, '#define TXT_HELP %d           /* ... per help line */' % (len(txt) + 2 * len(offs) + 54))

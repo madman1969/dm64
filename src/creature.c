@@ -34,6 +34,8 @@ void creatures_scan (void)
                     active[nactive].y = y;
                     active[nactive].timer = 1 + (rand () & 15);
                     active[nactive].atk = 1 + (rand () & 15);
+                    active[nactive].dir = rand () & 3;
+                    active[nactive].attacking = 0;
                     ++nactive;
                 }
             }
@@ -72,6 +74,7 @@ void hit_creature (signed char a, int dmg)
     }
     msg (hi_str (text_at (TXT_CREATURES + CTYPE (r) * 2)));
     msg ("IS SLAIN!");
+    sfx (SFX_SLAIN);
     for (i = 0; i < 3; ++i) {
         r[3 + i] = r[4 + i];
     }
@@ -109,6 +112,12 @@ static unsigned char can_enter (unsigned char x, unsigned char y)
     return (x != px || y != py) && creature_at (x, y) < 0;
 }
 
+/* The way to face to go dx, dy (one of them 0). */
+static unsigned char facing (signed char dx, signed char dy)
+{
+    return dy < 0 ? 0 : dx > 0 ? 1 : dy > 0 ? 2 : 3;
+}
+
 static void step (unsigned char a, signed char dx, signed char dy)
 {
     unsigned char nx = active[a].x + dx, ny = active[a].y + dy;
@@ -116,11 +125,15 @@ static void step (unsigned char a, signed char dx, signed char dy)
     if (!can_enter (nx, ny)) {
         return;
     }
+    active[a].dir = facing (dx, dy);
     list_remove (active[a].x, active[a].y, active[a].thing);
     list_add (nx, ny, active[a].thing);
     active[a].x = nx;
     active[a].y = ny;
-    redraw |= REDRAW_VIEW;
+    /* The view only changes if it moves within sight: 4 squares at most, either way. */
+    if ((unsigned char) (nx - px + 4) <= 8 && (unsigned char) (ny - py + 4) <= 8) {
+        redraw |= REDRAW_VIEW;
+    }
 }
 
 void creatures_tick (void)
@@ -134,6 +147,9 @@ void creatures_tick (void)
     for (a = 0; a < nactive; ++a) {
         r = GROUP (a);
         ci = &creature_info[CTYPE (r)];
+        if (active[a].attacking && !--active[a].attacking) {
+            redraw |= REDRAW_SPRITES;           /* done attacking: its usual look again */
+        }
         dx = px - active[a].x;
         dy = py - active[a].y;
         adx = dx < 0 ? -dx : dx;
@@ -148,6 +164,10 @@ void creatures_tick (void)
             if (!party_alive ()) {
                 continue;
             }
+            active[a].dir = facing (dx, dy);    /* it turns to the party, and strikes */
+            sfx (SFX_CRY + (ci->flags & CR_CRY));
+            active[a].attacking = 4;
+            redraw |= REDRAW_SPRITES;
             do {
                 who = rand () & 3;
             } while (who >= nchamps || champ[who].hp <= 0);

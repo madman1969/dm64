@@ -34,6 +34,10 @@ None of the game's data is in the source files. `tools/dmconv.py` extracts it in
 .\build.ps1 -Run     # ...and start it in VICE with a 512K REU
 ```
 
+In VS Code, `.vscode/tasks.json` has the same as tasks: **Build** (Ctrl+Shift+B), **Run**,
+**Build and run**, and **Run with mouse** (a 1351 in port 1). They assume VICE in
+`C:\GTK3VICE-3.9-win64`; change the path there if yours is elsewhere.
+
 Or open `DM64.tsln` in Tedide. It builds the FarMemC64 library, runs the converter as a
 pre-build step and makes the disk image as a post-build step. Its VICE arguments attach the disk
 image and add the REU.
@@ -141,9 +145,13 @@ though less often the wiser they are.
   raster interrupt switches from the bitmap to text partway down the screen. Messages on the
   floor appear below. The view is drawn straight onto the screen (there's no room for a second
   one), so you can see it being redrawn, for a moment, when something changes.
-- Creatures drawn from DM's own pictures. The one ahead is a large sprite that shifts between
-  two frames (the second mirrored, as DM does) and flashes white when hit; up to three more,
-  farther off or to the sides, are small sprites, hidden when something nearer is in the way.
+- Creatures drawn from DM's own pictures. The one ahead is a large sprite: seen from the front
+  it shifts between two frames (the second mirrored, as DM does), and as in DM it shows its
+  side, its back or its attack when it faces across the party's view, away from it, or strikes;
+  it flashes white when hit. Up to three more, farther off or to the sides, are small sprites.
+- Sound effects on the SID (`src/sound.s`), standing in for DM's sampled ones: switches, doors,
+  blows, wounds, swings, fireballs and explosions, spells, four kinds of creature cry,
+  creatures dying, picking things up, eating and drinking, teleporters and falling.
 - Sensors: floor plates (anything, party, object, party carrying an object, facing a
   direction), wall switches, keyholes that keep the key, any-object and specific-object
   sensors, AND/OR gates and countdowns. Effects are set, clear, toggle and hold, with delays,
@@ -184,18 +192,18 @@ though less often the wiser they are.
   here are simpler stand-ins, scaled by the spell's strength from the table and the power rune.
 - Throwing and shooting, bashing doors, creatures using doors and pits, and teleporting objects
   and creatures.
-- Creatures' side, back and attack views, stairs seen from the side, holes in the ceiling
-  under pits, doors that slide sideways as they open (they all slide up here), footprints,
-  DM's champion status boxes (the party is text below the view), the rune panel, pouches,
-  the quiver and the rest of the backpack, and sound.
+- Creatures in DM's places within a square (a group is one sprite here), stairs seen from the
+  side, holes in the ceiling under pits, doors that slide sideways as they open (they all
+  slide up here), footprints, DM's champion status boxes (the party is text below the view),
+  the rune panel, pouches, the quiver and the rest of the backpack, and DM's own sounds.
 - The endgame: the Firestaff, Lord Chaos and the fluxcage.
 
 ## How it fits in a C64
 
 ```text
 $0400-$07FF  buffers (the default screen's RAM)           LOWBSS segment, c64-dm64.cfg
-$0801-$BEAD  the program, rules tables, the party's level (3.2K buffer), the party's objects
-$BEAE-$BF7F  free (about 200 bytes)
+$0801-$BE29  the program, rules tables, the party's level (3.2K buffer), the party's objects
+$BE2A-$BF7F  free (about 340 bytes)
 $BF80-$C9FF  the overlay area: whichever overlay is in use (2.6K)
 $CA00-$CBFF  C stack (512 bytes)
 $CC00-$CFFF  the screen; its top 17 rows are the bitmap's colours
@@ -205,9 +213,10 @@ $D400-$D6FF  sprites (creatures, from  } bank 3 and always sees RAM there, the C
 $DC00-$DE3F  DM's inscription font, as bitmap cells
 $E000-$FF3F  the bitmap (its top 17 rows: the view, and the panel beside it), in the RAM
              under the KERNAL
-far memory   the 14 level images, about 34K (DMLEV), the overlays, 13K (DMOVL), the
-             creatures' sprites, 8.6K (DMSPR), the dungeon's texts, object names and our
-             own strings and some tables, 7K (DMTXT), and the view's pictures, 382K (DMWAL): about 450K
+far memory   the 14 level images, about 34K (DMLEV), the overlays, 16K (DMOVL), the
+             creatures' sprites from every side, 23K (DMSPR), the dungeon's texts, object
+             names, our own strings and some rules tables, 8K (DMTXT), and the view's
+             pictures, 409K (DMWAL): about 490K of the 512K
 ```
 
 The screen is split by a raster interrupt (`src/irq.s`): its top 17 rows are a multicolour
@@ -253,6 +262,7 @@ strings would land in the main program.)
 | `src/dungeon.c` | Levels and overlays in far memory, squares, object lists, objects, texts |
 | `src/view.c` | The 3D view and sprites |
 | `src/irq.s` | The raster split between the bitmap and the text |
+| `src/sound.s` | Sound effects on the SID |
 | `src/bitmap.s` | Drawing into the bitmap: DMWAL's pieces, objects (shifted into place), lettering |
 | `src/ui.c` | Messages, the party and status lines, the screen modes, keyboard and mouse input |
 | `src/mouse.s` | The mouse pointer, for cc65's mouse drivers |
@@ -267,8 +277,8 @@ strings would land in the main program.)
 | `src/inventory.c` | Overlay: a champion's inventory |
 | `src/cast.c` | Overlay: casting spells, potions and the other spells |
 | `src/save.c` | Overlay: saving and loading |
-| `src/unpack.c`, `src/unpackasm.s` | Overlay: unpacking DMWAL into far memory as the game starts |
-| `src/hw.c` | Video bank, RAM under the ROMs, data files, sound |
+| `src/unpack.c`, `src/unpackasm.s`, `src/start.c` | Overlay: unpacking DMWAL into far memory, and the rest of starting up |
+| `src/hw.c` | RAM under the ROMs, data files |
 
 ## Licence
 

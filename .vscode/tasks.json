@@ -1,0 +1,62 @@
+{
+    // Dungeon Master 64: build with build.ps1 (needs Python 3, cc65, VICE and Tedide's FarMem
+    // library: see the README). Ctrl+Shift+B builds; the Run tasks start VICE with a 512K REU.
+    // The tasks start PowerShell 7 directly ("process"), so they work whatever VS Code's
+    // terminal shell is.
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build",
+            "type": "process",
+            "command": "pwsh.exe",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "build.ps1"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": { "kind": "build", "isDefault": true },
+            "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+            "problemMatcher": {
+                "owner": "cc65",
+                "fileLocation": ["relative", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.*?):(\\d+): (Error|Warning): (.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "severity": 3,
+                    "message": 4
+                }
+            }
+        },
+        {
+            "label": "Run",
+            "detail": "Start the last build in VICE (512K REU, the D81 in drive 8)",
+            "type": "process",
+            "command": "pwsh.exe",
+            "args": [
+                "-NoProfile", "-Command",
+                "Start-Process -FilePath 'C:/GTK3VICE-3.9-win64/bin/x64sc.exe' -ArgumentList '-reu -reusize 512 -autostart bin/dm64.d81'"
+            ],
+            "options": { "cwd": "${workspaceFolder}" },
+            "presentation": { "reveal": "silent" },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build and run",
+            "dependsOrder": "sequence",
+            "dependsOn": ["Build", "Run"],
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "label": "Run with mouse",
+            "detail": "As Run, with a 1351 mouse in port 1 (press M in the game to turn it on)",
+            "type": "process",
+            "command": "pwsh.exe",
+            "args": [
+                "-NoProfile", "-Command",
+                "Start-Process -FilePath 'C:/GTK3VICE-3.9-win64/bin/x64sc.exe' -ArgumentList '-reu -reusize 512 -controlport1device 3 -autostart bin/dm64.d81'"
+            ],
+            "options": { "cwd": "${workspaceFolder}" },
+            "presentation": { "reveal": "silent" },
+            "problemMatcher": []
+        }
+    ]
+}

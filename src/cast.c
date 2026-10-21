@@ -109,15 +109,18 @@ static void cast (champion_t* c)
     wis = c->stat[3] + 15 > 115 ? 115 : c->stat[3] + 15;
     while (missing--) {
         if ((rand () & 127) > wis) {
-            msg ("THE SPELL FIZZLES. MORE PRACTICE NEEDED");
+            msg ("THE SPELL FIZZLES");
             return;
         }
     }
 
+    if (sp->kind != SPELL_PROJECTILE) {
+        sfx (SFX_SPELL);                /* projectiles make their own */
+    }
     switch (sp->kind) {
     case SPELL_POTION:
         if (held == NONE || TH_TYPE (held) != T_POTION || ((thing_ptr (held)[1] >> 8) & 0x7F) != 20) {
-            msg ("THAT NEEDS AN EMPTY FLASK IN HAND");
+            msg ("IT NEEDS AN EMPTY FLASK");
             return;
         }
         r = thing_ptr (held);

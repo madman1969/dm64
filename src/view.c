@@ -44,6 +44,18 @@ static const unsigned char side_cols[4] = { 0, 12, 9, 6 };
 static unsigned char sight;         /* how far ahead the party can see: the first wall, or 3 */
 static unsigned char sprite_depth;  /* 1 or 2 when a creature is right ahead, else 0 */
 static unsigned char sprite_type;
+static unsigned char sprite_look;   /* view (0 front, 1 side, 2 back, 3 attack) + 4 if mirrored */
+static unsigned char sprite_actor;  /* its active[] */
+
+/* How the creature ahead looks, as DM has it: attacking, or its side, back or front by the way
+** it faces. */
+static void look (unsigned char a)
+{
+    unsigned char n = (active[a].dir - pdir) & 3;
+
+    sprite_look = active[a].attacking ? 3 : n == 2 ? 0 : n == 0 ? 2 : n == 1 ? 1 + 4 : 1;
+}
+static unsigned char big_look = 255, big_want = 255;  /* loaded; asked for (sprite_look & 3) */
 
 /* Creature sprites, DM's own pictures (DMSPR, copied in from far memory as needed):
 **   sprites 0-3  the creature right ahead, a 2x2 block; two frames, the second mirrored,
@@ -496,6 +508,8 @@ static void square (unsigned char i)
         if (!l && k < 3 && (!sprite_depth || k < sprite_depth)) {
             sprite_depth = k;
             sprite_type = type;
+            sprite_actor = a;
+            look (a);
         } else if (nsmall < MAXSMALL) {
             small_x[nsmall] = x * 8 + 16;           /* centred on the cell, standing on it */
             small_y[nsmall] = y * 8 + 37;
@@ -526,7 +540,8 @@ void sprites_animate (void)
     if (!(VIC.spr_ena & 0x0F)) {
         return;
     }
-    frame = (game_time & 8) ? 4 : 0;
+    /* The front view shifts between itself and its mirror image; the others stay still. */
+    frame = big_look & 3 ? (big_look & 4) : (game_time & 8) ? 4 : 0;
     col = light_colours[light_level][creature_info[sprite_type].colour];
     if (creature_flash) {
         --creature_flash;
@@ -564,9 +579,10 @@ static unsigned char mirror (unsigned char b)
     return (b << 6) | ((b << 2) & 0x30) | ((b >> 2) & 0x0C) | (b >> 6);
 }
 
-/* Copies the creature ahead's sprite in from far memory, and makes its second frame by
-** mirroring it: each row of the right-hand blocks, reversed, becomes the left-hand one's. The
-** copy comes through view_cols, as the sprite area under the I/O area can't be written directly. */
+/* Copies the creature ahead's sprite in from far memory (the front view if it hasn't the one
+** wanted), and makes its second frame by mirroring it: each row of the right-hand blocks,
+** reversed, becomes the left-hand one's. The copy comes through view_cols, as the sprite area
+** under the I/O area can't be written directly. */
 static void load_big (void)
 {
     unsigned char* src = view_cols;
@@ -574,7 +590,10 @@ static void load_big (void)
     unsigned char half, row, b;
     unsigned int l, r;
 
-    sprite_fetch (sprite_type, 0, src, 256);
+    if (!sprite_view (sprite_type, sprite_look & 3, src)) {
+        sprite_view (sprite_type, 0, src);
+        sprite_look = 0;
+    }
     for (half = 0; half < 2; ++half) {          /* top blocks, then bottom */
         for (row = 0; row < 21; ++row) {
             l = half * 128 + row * 3;           /* left block's row; the right's is 64 on */
@@ -588,6 +607,7 @@ static void load_big (void)
     hi_read ((void*) HI_SPRITES, (unsigned) src, 256);
     hi_read ((void*) (HI_SPRITES + 256), (unsigned) back, 256);
     big_loaded = sprite_type;
+    big_look = sprite_look;
 }
 
 static void place_sprites (unsigned char small_bits)
@@ -598,9 +618,12 @@ static void place_sprites (unsigned char small_bits)
         VIC.spr_ena = (VIC.spr_ena & 0x80) | small_bits;
         return;
     }
-    if (big_loaded != sprite_type) {
+    /* Both frames are loaded, so mirroring only picks the other: a new view needs loading. */
+    if (big_loaded != sprite_type || big_want != (sprite_look & 3)) {
+        big_want = sprite_look & 3;
         load_big ();
     }
+    big_look = (big_look & 3) | (sprite_look & 4);
     big = sprite_depth == 1;
     x = big ? 88 : 112;             /* centred, standing on the floor half-way into the square */
     y = big ? 92 : 110;
@@ -632,6 +655,17 @@ static void light_show (void)
                 c[x] = m[c[x] & 15];
             }
         }
+    }
+}
+
+static void place_sprites (unsigned char small_bits);
+
+/* The creature ahead has turned, or started or stopped attacking: only its sprite changes. */
+void view_sprites (void)
+{
+    if (sprite_depth && sprite_actor < nactive) {
+        look (sprite_actor);
+        place_sprites (VIC.spr_ena & 0x70);
     }
 }
 

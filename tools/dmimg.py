@@ -117,9 +117,10 @@ def nearest(rgb, choices):
     return min(choices, key=lambda c: sum((a - b) ** 2 for a, b in zip(rgb, C64[c])))
 
 
-def to_sprite(pic, pal, clear, box_w, box_h):
+def to_sprite(pic, pal, clear, box_w, box_h, own=None):
     """A picture as multicolour sprite cells: box_w x box_h cells of 2x1 pixels each, values
-    0 clear, 1 SHARED0, 2 the creature's own colour, 3 SHARED1. Returns (cells, colour)."""
+    0 clear, 1 SHARED0, 2 the creature's own colour, 3 SHARED1. Returns (cells, colour). own:
+    the colour to use (the front view's, for its other views)."""
     w, h, px = pic
     # The creature's own colour: its commonest C64 colour other than the shared ones.
     counts = {}
@@ -127,10 +128,11 @@ def to_sprite(pic, pal, clear, box_w, box_h):
         if c != clear:
             k = nearest(pal[c], range(16))
             counts[k] = counts.get(k, 0) + 1
-    own = max((k for k in counts if k not in (SHARED0, SHARED1)), key=lambda k: counts[k],
-              default=12)
-    if counts.get(own, 0) * 4 < sum(counts.values()):
-        own = 12            # no strong colour of its own: a grey creature
+    if own is None:
+        own = max((k for k in counts if k not in (SHARED0, SHARED1)), key=lambda k: counts[k],
+                  default=12)
+        if counts.get(own, 0) * 4 < sum(counts.values()):
+            own = 12        # no strong colour of its own: a grey creature
 
     choices = {SHARED0: 1, own: 2, SHARED1: 3}
     scale = min(box_w * 2 / w, box_h / h)
@@ -165,14 +167,36 @@ def sprite_blocks(cells):
     return bytes(out)
 
 
+# Each creature's views after its front one, as DM orders them: side, back, attack, each only
+# if its graphic info (GRAPHICS.DAT item 559's creature table, the word at 4) says it has it.
+CREATURE_TABLE_ITEM, CREATURE_TABLE, CREATURE_SIZE = 559, 676, 26
+VIEW_SIDE, VIEW_BACK, VIEW_ATTACK = 0x08, 0x10, 0x20
+SPRITE_HEADER = 27 * 3 * 2
+
+
 def creature_sprites(graphics):
-    """For each creature type: its big sprite (4 blocks) and a small one (1 block) - 320 bytes
-    - and its own colour. (The game mirrors the big one itself, for its second frame.)"""
-    data, colours = bytearray(), []
-    for item, clear, pal in creature_aspects(graphics):
+    """DMSPR: a word for each creature's side, back and attack views (where its big sprite is
+    in DMSPR, 0 if it hasn't that view); then each creature's front view, a big sprite (4
+    blocks) and a small one (1 block) - 320 bytes; then the other views' big sprites, 256 bytes
+    each. Returns that and each creature's own colour. (The game mirrors the big ones itself.)"""
+    table = graphics.item(CREATURE_TABLE_ITEM)
+    fronts, extra, colours, header = bytearray(), bytearray(), [], []
+    aspects = creature_aspects(graphics)
+    extra_at = SPRITE_HEADER + 320 * len(aspects)
+    for t, (item, clear, pal) in enumerate(aspects):
         pic = decode(graphics.item(item))
         big, own = to_sprite(pic, pal, clear, 24, 42)
         small, _ = to_sprite(pic, pal, clear, 12, 21)
-        data += sprite_blocks(big) + sprite_blocks(small)
+        fronts += sprite_blocks(big) + sprite_blocks(small)
         colours.append(own)
-    return bytes(data), colours
+        info = struct.unpack_from('>H', table, CREATURE_TABLE + t * CREATURE_SIZE + 4)[0]
+        n = 1
+        for flag in (VIEW_SIDE, VIEW_BACK, VIEW_ATTACK):
+            if info & flag:
+                view, _ = to_sprite(decode(graphics.item(item + n)), pal, clear, 24, 42, own)
+                header.append(extra_at + len(extra))
+                extra += sprite_blocks(view)
+                n += 1
+            else:
+                header.append(0)
+    return struct.pack('<%dH' % len(header), *header) + bytes(fronts) + bytes(extra), colours

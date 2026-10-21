@@ -66,16 +66,15 @@ int main (void)
     say ("DUNGEON MASTER 64");
     say ("");
     say ("LOADING...");
-    if (!hw_load_data ()) {
-        say ("CAN'T LOAD DMHI");
-        return 1;
-    }
     if (!dungeon_init ()) {
         say ("THIS GAME NEEDS A RAM EXPANSION:");
         say ("AN REU (512K OR MORE) OR A SUPERCPU.");
         return 1;
     }
-    hw_init ();
+    if (!ovl_start ()) {            /* dungeon_init left overlay 4 in */
+        say ("CAN'T LOAD DMHI");
+        return 1;
+    }
     ui_init ();
     srand (JIFFY);
 
@@ -103,10 +102,11 @@ int main (void)
             magic_tick ();
             light_tick ();
             sprites_animate ();
-            sound_tick ();
         }
         if (redraw & REDRAW_VIEW) {
             view_draw ();
+        } else if (redraw & REDRAW_SPRITES) {
+            view_sprites ();
         }
         if (redraw & REDRAW_PANEL) {
             panel_draw ();

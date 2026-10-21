@@ -126,6 +126,15 @@ void far_wall (void* dst, unsigned long offset, unsigned int len)
     far_read (dst, wall_far + offset, len);
 }
 
+/* A byte from DMTXT's tables (dmconv.py): the rules for objects. */
+unsigned char text_byte (unsigned int offset)
+{
+    static unsigned char b;
+
+    far_text (&b, offset, 1);
+    return b;
+}
+
 /* A word from DMTXT's tables (dmconv.py): where a name or line is. */
 unsigned int text_at (unsigned int offset)
 {
@@ -141,11 +150,28 @@ void far_text (void* dst, unsigned int offset, unsigned int len)
     far_read (dst, text_far + offset, len);
 }
 
-/* Copies part of a creature's sprites (DMSPR: big, mirrored big, small) to where the video
-** chip will show them, in the RAM under the KERNAL: a far copy writes straight there. */
+/* Copies part of a creature's front view (DMSPR, after its table: big, small) to dst. */
 void sprite_fetch (unsigned char type, unsigned int offset, void* dst, unsigned int len)
 {
-    far_read (dst, sprites_far + (unsigned long) type * SPRITE_SET + offset, len);
+    far_read (dst, sprites_far + SPRITE_HEADER + (unsigned long) type * SPRITE_SET + offset, len);
+}
+
+/* A creature's big sprite seen from the front (view 0), the side, the back or attacking (1-3),
+** to dst; 0 if it has no such view (dmimg.py's creature_sprites). */
+unsigned char sprite_view (unsigned char type, unsigned char view, void* dst)
+{
+    static unsigned int at;
+
+    if (view) {
+        far_read (&at, sprites_far + (type * 3 + view - 1) * 2, 2);
+        if (!at) {
+            return 0;
+        }
+        far_read (dst, sprites_far + at, 256);
+    } else {
+        sprite_fetch (type, 0, dst, 256);
+    }
+    return 1;
 }
 
 void level_flush (void)
@@ -431,7 +457,7 @@ unsigned char obj_info (unsigned int t)
 unsigned char obj_icon_of (unsigned int t)
 {
     unsigned char i = obj_info (t);
-    return i == 255 ? 255 : obj_icon[i];
+    return i == 255 ? 255 : text_byte (TXT_OBJ_ICON + i);
 }
 
 #pragma bss-name (push, "LOWBSS")

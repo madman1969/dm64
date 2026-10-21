@@ -96,7 +96,7 @@ class Graphics:
         cr = []
         for i in range(27):
             r = g[CREATURES + i * 26:CREATURES + i * 26 + 26]
-            cr.append(dict(aspect=r[0], attributes=struct.unpack_from('>H', r, 2)[0],
+            cr.append(dict(aspect=r[0], sound=r[1], attributes=struct.unpack_from('>H', r, 2)[0],
                            move=r[6], attack_ticks=r[7], defense=r[8], health=r[9],
                            attack=r[10], poison=r[11], dex=r[12]))
         t['creatures'] = cr

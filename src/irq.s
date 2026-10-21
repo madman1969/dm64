@@ -15,6 +15,7 @@
 ;
 
         .export _irq_vectors, _irq_init, _split_on, _split_bg
+        .import sound_frame
 
         .segment "DATA"
 
@@ -102,6 +103,8 @@ split:
         sta $D019
         lda phase
         bne @bottom
+        jsr sound_frame             ; once a frame, at the top
+        lda phase
         lda _split_on
         beq @text                   ; all text
         lda #$3B

@@ -145,7 +145,7 @@ void ovl_inventory (unsigned char who)
         } else if (k >= 'a' && k < 'a' + NSLOTS) {
             s = k - 'a';
             if (held != NONE && s < SL_PACK && slot_needs[s]) {
-                f = obj_flags[obj_info (held)];
+                f = text_byte (TXT_OBJ_FLAGS + obj_info (held));
                 if (!(f & slot_needs[s])) {
                     msg ("IT DOESN'T GO THERE");
                     continue;

@@ -6,7 +6,8 @@
 **   overlay 1  screens.c   the map; the mouse
 **   overlay 2  cast.c      casting spells
 **   overlay 3  save.c      saving and loading
-**   overlay 4  unpack.c    unpacking DMWAL as the game starts
+**   overlay 4  unpack.c,   unpacking DMWAL and the rest of starting up
+**              start.c
 **   overlay 5  inventory.c a champion's inventory
 **
 ** An overlay may call anything here in ordinary memory, but nothing in another overlay. The
