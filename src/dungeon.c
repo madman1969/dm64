@@ -51,7 +51,7 @@ unsigned int pool[POOL_SIZE][2];
 ** ordinary memory and kept in far memory, each copied in when it's called. The linker's config
 ** (c64-dm64.cfg) defines the area; the build puts them in the DMOVL file, each padded to its
 ** size. */
-#define NOVERLAYS 5
+#define NOVERLAYS 6
 extern unsigned char _OVL1_START__[], _OVL1_SIZE__[];
 #define OVL_START ((void*) _OVL1_START__)
 #define OVL_SIZE ((unsigned int) _OVL1_SIZE__)

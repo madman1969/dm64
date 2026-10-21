@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dmdat    # noqa: E402
 import dmgfx    # noqa: E402
 import dmimg    # noqa: E402
+import art      # noqa: E402
 
 VIEW_W, VIEW_H = 224, 136
 FLOOR, CEILING = 75, 76
@@ -362,6 +363,14 @@ def build_pieces(G, used_orns=None, door_kinds=(), objinfo=(), level_orns=b''):
     pieces += object_pieces(G)
     pieces.append(object_tables(objinfo) + level_orns)
     pieces += projectile_pieces(G)
+    assert len(pieces) == PIECE_INVENTORY
+    pieces.append(piece_bytes(inventory_canvas(G)))
+    pieces += icon_pieces(G)
+    pieces.append(panel_piece())
+    w, h, px = dmimg.decode(G.item(PORTRAITS))
+    for champion in range(PORTRAIT_COUNT):
+        sx, sy = (champion & 7) * 32, (champion >> 3) * 29
+        pieces.append(object_sprite([px[(sy + y) * w + sx + x] for y in range(29) for x in range(32)], 32, 29))
     assert len(pieces) == PIECE_DOOR
     # Doors only shut: a part-open door is drawn as the top rows of the shut one (view.c).
     for door_set, orn in door_kinds:
@@ -792,6 +801,50 @@ def light_colours(G):
     return out
 
 
+# ---- the inventory ----------------------------------------------------------------------------
+# DM's inventory takes the view's place: its picture (item 17), with the panel on the right
+# (item 20, see-through red) and its food and water labels (items 30, 31, see-through dark grey)
+# as DM first shows them (ScummVM's InventoryMan). Objects in it are DM's 16x16 icons, 32 to a
+# picture (items 42-48), drawn as object sprites (view.c places them in the slots).
+INVENTORY, INVENTORY_PANEL, FOOD_LABEL, WATER_LABEL = 17, 20, 30, 31
+FIRST_ICONS, ICONS = 42, 224
+
+
+def inventory_canvas(G):
+    w, h, px = dmimg.decode(G.item(INVENTORY))
+    canvas = list(px)
+    for item, box, clear in ((INVENTORY_PANEL, (80, 223, 52, 124), 8),
+                             (FOOD_LABEL, (112, 159, 60, 68), 12), (WATER_LABEL, (112, 159, 83, 91), 12)):
+        lw, lh, lpx = dmimg.decode(G.item(item))
+        layer = boxed_canvas(lpx, lw, lh, box, 0, clear=clear)
+        canvas = [c if l < 0 else l for c, l in zip(canvas, layer)]
+    return canvas
+
+
+def panel_piece():
+    """The buttons beside the view (art.py's panel_cells), as a piece in columns 28-39, so it
+    can be drawn again after the inventory has drawn over it."""
+    rows = art.panel_cells()
+    out = bytearray([len(rows)])
+    for cy in sorted(rows):
+        data = rows[cy]
+        body = bytearray([cy, 28, 12])
+        for cx in range(12):
+            body += b'\x01' + data[cx * 8:cx * 8 + 8]
+        out += struct.pack('<H', len(body)) + body
+    return bytes(out)
+
+
+def icon_pieces(G):
+    pieces = []
+    for i in range(ICONS):
+        w, h, px = dmimg.decode(G.item(FIRST_ICONS + i // 32))
+        sx, sy = (i & 15) * 16, i & 16
+        icon = [px[(sy + y) * w + sx + x] for y in range(16) for x in range(16)]
+        pieces.append(object_sprite(icon, 16, 16))
+    return pieces
+
+
 # ---- writing on walls -----------------------------------------------------------------------------
 # DM's inscription font (item 120): 36 shaded letters, 8x8 each, side by side: A-Z, space, full
 # stop, then symbols. Each becomes one cell of the bitmap: 8 bytes of pattern, 8 of mask (view.c
@@ -840,7 +893,11 @@ PIECE_DOOR_BUTTON = PIECE_FLOOR_ORN + FLOOR_ORNS * 9  # + D3R, D3C, D2C, D1C
 PIECE_OBJ = PIECE_DOOR_BUTTON + 4                   # + (aspect * 3 + size) * 3 + variant
 PIECE_OBJ_TABLES = PIECE_OBJ + len(OBJECT_ASPECTS) * 9
 PIECE_PROJECTILE = PIECE_OBJ_TABLES + 1            # + kind * 4 + depth (3 to 0)
-PIECE_DOOR = PIECE_PROJECTILE + 16                  # + door kind * 9 + place (DP_KEYS); last
+PIECE_INVENTORY = PIECE_PROJECTILE + 16
+PIECE_ICON = PIECE_INVENTORY + 1                    # + icon
+PIECE_PANEL = PIECE_ICON + ICONS                    # the buttons beside the view (art.py)
+PIECE_FACE = PIECE_PANEL + 1                        # + champion: a portrait as a sprite
+PIECE_DOOR = PIECE_FACE + PORTRAIT_COUNT            # + door kind * 9 + place (DP_KEYS); last
 
 # DMWAL is packed on the disk, and unpacked into far memory as it loads (walls.c). A byte below
 # $80 is followed by that many plus one bytes to copy; otherwise its bits 2-6 plus 3 are a

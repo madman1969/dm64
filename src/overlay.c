@@ -3,10 +3,11 @@
 ** in (dungeon.c: overlay), calls it, and puts the dungeon's mouse zones back afterwards.
 **
 **   overlay 0  recruit.c   champions from the mirrors, and help
-**   overlay 1  screens.c   the inventory and the map; the mouse
+**   overlay 1  screens.c   the map; the mouse
 **   overlay 2  cast.c      casting spells
 **   overlay 3  save.c      saving and loading
 **   overlay 4  unpack.c    unpacking DMWAL as the game starts
+**   overlay 5  inventory.c a champion's inventory
 **
 ** An overlay may call anything here in ordinary memory, but nothing in another overlay. The
 ** screens that cover the view switch the whole screen to text while they're up.
@@ -25,8 +26,7 @@ void recruit (void)
 
 void inventory (unsigned char who)
 {
-    overlay (1);
-    screen_text ();
+    overlay (5);
     ovl_inventory (who);
     screen_view ();
     main_zones ();

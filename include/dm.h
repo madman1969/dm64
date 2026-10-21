@@ -144,12 +144,14 @@ extern unsigned char split_bg;              /* the bitmap's background colour */
 void __fastcall__ blit_row (const unsigned char* row);
 void __fastcall__ stamp_cell (unsigned char glyph);  /* DM's inscription font */
 void __fastcall__ object_row (const unsigned char* row);   /* an object, a row at a time */
-extern unsigned char ob_cells, ob_shift, ob_y, ob_colour;
+extern unsigned char ob_cells, ob_shift, ob_y, ob_colour, ob_right;
 extern signed char ob_col;
 extern unsigned char bm_col, bm_row;
 
 /* ---- view.c ---- */
 void view_draw (void);
+void piece (unsigned int id, unsigned char quarters);        /* one of DMWAL's pictures */
+void sprite (unsigned int id, int x, int bottom, unsigned char centred);  /* an object sprite */
 void sprites_off (void);
 void sprites_animate (void);                /* each tick: creatures' idle frames, hit flash */
 extern unsigned char creature_flash;        /* ticks the creature ahead shows white, when hit */
@@ -193,6 +195,7 @@ typedef struct {
     unsigned char skill[4];     /* fighter, ninja, priest, wizard */
     unsigned char food;
     unsigned char cooldown;
+    unsigned char portrait;     /* which of DM's 24 champions */
     unsigned int slot[NSLOTS];
 } champion_t;
 extern champion_t champ[4];

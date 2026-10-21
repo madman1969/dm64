@@ -42,6 +42,7 @@
     "src/screens.c",
     "src/cast.c",
     "src/save.c",
+    "src/inventory.c",
     "src/unpack.c",
     "src/unpackasm.s",
     "gen/dmdata.c"

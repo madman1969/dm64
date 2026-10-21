@@ -58,7 +58,7 @@ static unsigned char big_loaded = 255, small_loaded[MAXSMALL] = { 255, 255, 255 
 unsigned char creature_flash;
 
 /* Draws one of DMWAL's pieces, or the top quarters of it (a door part of the way open). */
-static void piece (unsigned int id, unsigned char quarters)
+void piece (unsigned int id, unsigned char quarters)
 {
     static unsigned int w;
     static unsigned char n;
@@ -97,7 +97,6 @@ static const unsigned char pile_shift[16] = {           /* x << 4 | y */
 };
 static unsigned char pile;      /* the next object's shift */
 
-static void sprite (unsigned int id, int x, int top, unsigned char centred);
 
 /* A spell in flight in view square vsq (DM draws them half-way up, in the square's front
 ** places). */
@@ -148,7 +147,7 @@ static void object (unsigned int t, unsigned char vsq, unsigned char cell)
 
 /* Draws one of DMWAL's object sprites (dmview.py's object_sprite) with the middle of its bottom
 ** at (x, y) in DM's pixels, or if centred its middle at (x, y). */
-static void sprite (unsigned int id, int x, int top, unsigned char centred)
+void sprite (unsigned int id, int x, int top, unsigned char centred)
 {
     static unsigned char hdr[3];
     static unsigned long at;

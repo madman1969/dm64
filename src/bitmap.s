@@ -202,7 +202,7 @@ _stamp_cell:
 ;   pattern, one of mask; ob_cells of them) at pixel row ob_y of the bitmap, starting at cell
 ;   column ob_col (may be off the left: those cells are skipped, as are those past 27) and
 ;   ob_shift double pixels further right. Cells it covers take colour ob_colour, if below 16.
-        .export _object_row, _ob_cells, _ob_col, _ob_shift, _ob_y, _ob_colour
+        .export _object_row, _ob_cells, _ob_col, _ob_shift, _ob_y, _ob_colour, _ob_right
 
         .segment "DATA"
 _ob_cells:  .byte 0
@@ -210,6 +210,7 @@ _ob_col:    .byte 0
 _ob_shift:  .byte 0
 _ob_y:      .byte 0
 _ob_colour: .byte 255
+_ob_right:  .byte 28                ; cells from here on are left alone: the view ends
 ocol:       .byte 0
 oleft:      .byte 0
 ocarry_p:   .byte 0
@@ -331,7 +332,7 @@ _object_row:
         lda tmp2
         sta ocarry_m
         lda ocol                    ; in the view?
-        cmp #28
+        cmp _ob_right
         bcs @skip                   ; (negative columns are 128 and up)
         ldy #0
         lda onew_m

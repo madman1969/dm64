@@ -66,7 +66,7 @@ champions. Each comes with their real statistics and possessions from the origin
 | T | Take an object (from the wall ahead, or from the floor) |
 | G | Put down what's in your hand (into an alcove ahead, or on the floor) |
 | 1-4 | That champion attacks with the weapon in their action hand |
-| I | Inventory: A-O swap your hand with a slot, 1-4 pick a champion, E eat/drink/read |
+| I | Inventory: A-O swap your hand with a slot, 1-4 pick a champion, X eat/drink/read |
 | X | Eat, drink or read what's in your hand |
 | C | Cast a spell (see below) |
 | P | The map of the level, as far as the party has seen it |
@@ -89,8 +89,7 @@ With the pointer on, everything can be clicked:
   they say. The pad under them: turn left, forward, turn right; step left, back, step right.
 - **The status line** under the party (what's in hand, what's on the floor): takes an object, or
   puts down what's in your hand.
-- **The inventory:** a slot swaps it with your hand. Click a champion to switch to them, or
-  **[EAT/DRINK]** or **[BACK]**.
+- **The inventory:** a slot swaps it with your hand.
 - **Casting:** the runes on offer, then **CAST**, **BACK** or **CANCEL**.
 - **The right button** backs out of any screen.
 
@@ -155,7 +154,10 @@ though less often the wiser they are.
 - Stairs and pits between levels, lined up by each level's place in the dungeon. Teleporters
   move the party, within a level or to another one, with their rotation.
 - Recruiting champions from the mirrors, with an inventory of 15 slots each. Objects travel
-  with the party from level to level.
+  with the party from level to level. The inventory is DM's own: its picture in the view's
+  place, each object as DM's icon in its slot (the hands, head, neck, body, legs, feet and the
+  first eight places in the backpack), the food bar, and the champion's portrait beside it;
+  their numbers are in the text below.
 - Melee combat using the weapon tables. Creature groups chase and attack at their own speeds,
   and drop what they carry when they die. Weapons pass through non-material creatures (ghosts,
   black flames, materializers, water elementals): only magic, or a Vorpal Blade, hurts them.
@@ -184,15 +186,16 @@ though less often the wiser they are.
   and creatures.
 - Creatures' side, back and attack views, stairs seen from the side, holes in the ceiling
   under pits, doors that slide sideways as they open (they all slide up here), footprints,
-  DM's champion portraits in the panel, and sound.
+  DM's champion status boxes (the party is text below the view), the rune panel, pouches,
+  the quiver and the rest of the backpack, and sound.
 - The endgame: the Firestaff, Lord Chaos and the fluxcage.
 
 ## How it fits in a C64
 
 ```text
 $0400-$07FF  buffers (the default screen's RAM)           LOWBSS segment, c64-dm64.cfg
-$0801-$BEAB  the program, rules tables, the party's level (3.2K buffer), the party's objects
-$BEAC-$BF7F  free (about 200 bytes)
+$0801-$BEAD  the program, rules tables, the party's level (3.2K buffer), the party's objects
+$BEAE-$BF7F  free (about 200 bytes)
 $BF80-$C9FF  the overlay area: whichever overlay is in use (2.6K)
 $CA00-$CBFF  C stack (512 bytes)
 $CC00-$CFFF  the screen; its top 17 rows are the bitmap's colours
@@ -260,7 +263,8 @@ strings would land in the main program.)
 | `src/light.c` | Light and darkness: torches, light spells, which palette |
 | `src/overlay.c` | The way into each overlay |
 | `src/recruit.c` | Overlay: recruiting champions from the mirrors, and help |
-| `src/screens.c` | Overlay: the inventory and the map, and choosing the mouse |
+| `src/screens.c` | Overlay: the map, and choosing the mouse |
+| `src/inventory.c` | Overlay: a champion's inventory |
 | `src/cast.c` | Overlay: casting spells, potions and the other spells |
 | `src/save.c` | Overlay: saving and loading |
 | `src/unpack.c`, `src/unpackasm.s` | Overlay: unpacking DMWAL into far memory as the game starts |

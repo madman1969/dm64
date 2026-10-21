@@ -192,6 +192,7 @@ void ovl_recruit (void)
         }
         t = next;
     }
+    c->portrait = (unsigned char) SENS_DATA (sensor);
     sensor[1] &= 0xFF80;            /* an empty mirror now */
     msg (c->name);
     msg ("JOINS THE PARTY");

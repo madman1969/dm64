@@ -21,7 +21,7 @@
 #pragma rodata-name (push, "OVL4")
 #pragma data-name (push, "OVL4")
 
-#define SAVE_VERSION 5
+#define SAVE_VERSION 6
 #define DEVICE (*(unsigned char*) 0x00BA < 8 ? 8 : *(unsigned char*) 0x00BA)
 
 typedef struct {

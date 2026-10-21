@@ -1,4 +1,4 @@
-# Makes bin\dm64.d81 from the linked program: joins the overlays (bin\dm64.prg.1 to .5, each
+# Makes bin\dm64.d81 from the linked program: joins the overlays (bin\dm64.prg.1 to .6, each
 # padded to the overlay size in c64-dm64.cfg) into DMOVL, then writes the program and its data
 # files to a fresh disk image, keeping any saved games from the old one.
 #
@@ -14,7 +14,7 @@ if ($cfg -notmatch '__OVLSIZE__:\s*type\s*=\s*weak,\s*value\s*=\s*\$([0-9A-Fa-f]
 $size = [Convert]::ToInt32($Matches[1], 16)
 $ovl = New-Object System.Collections.Generic.List[byte]
 $ovl.AddRange([byte[]](0, 0))                       # a dummy load address
-foreach ($n in 1..5) {
+foreach ($n in 1..6) {
     $part = [IO.File]::ReadAllBytes("bin\dm64.prg.$n")
     if ($part.Length -gt $size) { throw "overlay $n is $($part.Length) bytes, more than $size" }
     $ovl.AddRange($part)
